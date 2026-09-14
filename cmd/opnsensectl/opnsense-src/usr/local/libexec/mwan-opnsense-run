@@ -9,7 +9,8 @@
 # and reverts to the last known-good binary if the new one fails to come up
 # healthy.
 #
-# Paths mirror the deploy state machine in internal/opnsense/svc/deploy.go.
+# Paths mirror the daemon's deploy state machine, internal/svc/deploy.go in
+# agoodkind/opnsensectl.
 # /var/run is a memory disk on OPNsense, so pending-verify, deploy.state,
 # and the boot-attempt marker are per-boot. That is the intended scope: the
 # boot-attempt marker bounds an in-session crashloop to a single revert, and
