@@ -1,0 +1,42 @@
+[Unit]
+Description=MWAN OPNsense chardev drainer (holds the qemu virtio-serial chardev open)
+Documentation=https://github.com/agoodkind/configs
+After=network.target qemu-server.service
+Wants=network.target
+Requires=mwan-opnsense-drain.socket
+After=mwan-opnsense-drain.socket
+
+[Service]
+# All inputs are read from /etc/opnsensectl/config.toml under [opnsense.drain].
+# Override per host by templating that section, not by patching the unit.
+Type=notify
+ExecStart=/usr/local/bin/mwan opnsense host drain
+Restart=always
+RestartSec=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mwan-opnsense-drain
+
+# The file descriptor store keeps the live chardev connection across a restart
+# (a deploy), so the host side of the chardev never disconnects and no guest
+# write is stranded in the kernel. See docs/ops/opnsense/wedge.md.
+FileDescriptorStoreMax=4
+FileDescriptorStorePreserve=yes
+
+# The drainer needs:
+#   - read+write access to the qemu chardev unix socket under
+#     /var/run/qemu-server/, owned by root (Proxmox-managed).
+#   - read+write access to its own relay socket under /var/run/.
+#   - read access to /etc/opnsensectl/config.toml.
+# No network capabilities: it only talks to local unix sockets.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+PrivateTmp=true
+ReadWritePaths=/var/run /run
+
+[Install]
+WantedBy=multi-user.target

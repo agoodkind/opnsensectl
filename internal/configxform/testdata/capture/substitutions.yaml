@@ -1,0 +1,199 @@
+# Concrete substitution table for `mwan opnsense config import` on the suburban
+# OPNsense testbed. Values here describe the current testbed shape.
+
+# Addressing rules:
+#   * Testbed IPv4 tenant VLANs use `10.240.x.0/24`.
+#   * The testbed guest segment is VMNET on untagged vtnet0, as prod is. It
+#     keeps the `.4` IPv4 third octet, which must not move.
+#   * Testbed IPv6 tenant segments sit inside the translated `210::/60`
+#     aggregate: VMNET 210::, PRIVILEGED 211::, GENERAL 212::, CAPTIVE 213::.
+#   * MANAGEMENT does not exist on the testbed. Its rules end in a terminal
+#     reject, which would deny servers outbound HTTP, DNS, and apt, so the
+#     interface and everything referencing it are removed rather than reused.
+
+device_names:
+  - name: "MANAGEMENT and four VLAN parents: iavf0 to vtnet0"
+    from: "iavf0"
+    to:   "vtnet0"
+
+xpath_sets:
+  - name: "hostname"
+    xpath: "//opnsense/system/hostname"
+    new_value: "router"
+
+  - name: "WAN ipv4"
+    xpath: "//opnsense/interfaces/wan/ipaddr"
+    new_value: "10.240.240.2"
+  - name: "WAN ipv6"
+    xpath: "//opnsense/interfaces/wan/ipaddrv6"
+    new_value: "3d06:bad:b01:201::2"
+  - name: "VMNET v4"
+    xpath: "//opnsense/interfaces/opt6/ipaddr"
+    new_value: "10.240.4.1"
+  - name: "VMNET v6"
+    xpath: "//opnsense/interfaces/opt6/ipaddrv6"
+    new_value: "3d06:bad:b01:210::1"
+  - name: "PRIVILEGED LAN ipv6"
+    xpath: "//opnsense/interfaces/lan/ipaddrv6"
+    new_value: "3d06:bad:b01:211::1"
+  - name: "GENERAL ipv6"
+    xpath: "//opnsense/interfaces/opt4/ipaddrv6"
+    new_value: "3d06:bad:b01:212::1"
+  - name: "IPv6OnlyVLAN ipv6"
+    xpath: "//opnsense/interfaces/opt8/ipaddrv6"
+    new_value: "3d06:bad:b01:264::1"
+
+  - name: "NAT64 / Tayga prefix"
+    xpath: "//opnsense/OPNsense/tayga/general/v6prefix"
+    new_value: "3d06:bad:b01:2664::/96"
+
+  - name: "Captive portal hostname"
+    xpath: "//opnsense/captiveportal/hostname"
+    new_value: "captive"
+
+# Removing the MANAGEMENT interface strands every reference to it, so each one
+# goes with it: its own rules, the rules elsewhere that use it as a source
+# network, its virtual IP, its router advertisement, its DHCP ranges, and its
+# membership of the INTERNAL group, which a text literal below rewrites.
+remove_elements:
+  - name: "MANAGEMENT interface declaration"
+    xpath: "//opnsense/interfaces/opt9"
+  - name: "MANAGEMENT firewall rules"
+    xpath: "//opnsense/filter/rule[interface='opt9']"
+  # These three live on other interfaces but use the MANAGEMENT network as
+  # their source, so they strand too. They are selected by description because
+  # the XPath engine rejects a nested path inside a predicate.
+  - name: "UniFi rules sourced from the MANAGEMENT network"
+    xpath: "//opnsense/filter/rule[descr='TEMP Allow Unifi Access from Mgmt']"
+  - name: "UniFi to proxy firewall rule sourced from MANAGEMENT"
+    xpath: "//opnsense/filter/rule[descr='Unifi->Proxy Container Traffic 443 HTTPS']"
+  - name: "UniFi to proxy NAT rule sourced from MANAGEMENT"
+    xpath: "//opnsense/nat/rule[descr='Unifi->Proxy Container Traffic 443 HTTPS']"
+  - name: "MANAGEMENT gateway link-local virtual IP"
+    xpath: "//opnsense/virtualip/vip[interface='opt9']"
+  - name: "MANAGEMENT router advertisements"
+    xpath: "//opnsense/OPNsense/radvd/entries[interface='opt9']"
+  - name: "MANAGEMENT DHCP ranges"
+    xpath: "//opnsense/dnsmasq/dhcp_ranges[interface='opt9']"
+  # An empty placeholder the 26.7 migration left behind once router
+  # advertisements moved out of dhcpdv6 into their own model.
+  - name: "MANAGEMENT DHCPv6 placeholder"
+    xpath: "//opnsense/dhcpdv6/opt9"
+  - name: "WireGuard client peers"
+    xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
+  - name: "WireGuard server peers"
+    xpath: "//opnsense/OPNsense/wireguard/server/servers/server"
+  - name: "Inline certs"
+    xpath: "//opnsense/cert"
+
+# Production's vault sits on the transit bridge and reaches its failover over
+# that segment directly, so production needs no rule for it. Suburban holds no
+# address there, by design, and routes to the transit segment through this
+# router instead. That extra hop is the one sanctioned divergence from
+# production, and it only works if the router passes VMNET traffic to the
+# transit networks. Without these, suburban and the workstation reach neither
+# the MWAN VM nor the failover.
+insert_elements:
+  - name: "VMNET to transit pass rule, IPv6"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="b7f1c2a0-5d3e-4a91-9c64-0f2a1d8e3b70">
+        <type>pass</type>
+        <interface>opt6</interface>
+        <ipprotocol>inet6</ipprotocol>
+        <statetype>keep state</statetype>
+        <descr>VMNET to transit: suburban reaches the MWAN VM and the failover through this router rather than across the bridge</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <any>1</any>
+        </source>
+        <destination>
+          <address>3d06:bad:b01:201::/64</address>
+        </destination>
+      </rule>
+  - name: "VMNET to transit pass rule, IPv4"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="c8a2d3b1-6e4f-4b02-8d75-1a3b2c9f4e81">
+        <type>pass</type>
+        <interface>opt6</interface>
+        <ipprotocol>inet</ipprotocol>
+        <statetype>keep state</statetype>
+        <descr>VMNET to transit: suburban reaches the MWAN VM and the failover through this router rather than across the bridge</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <any>1</any>
+        </source>
+        <destination>
+          <address>10.240.240.0/29</address>
+        </destination>
+      </rule>
+
+text_literals:
+  # Runs before the tenant shifts so they cannot match inside a transit address.
+  - name: "WAN transit v4 prefix shift"
+    from: "10.250.250."
+    to:   "10.240.240."
+  - name: "PRIVILEGED v4 prefix shift"
+    from: "10.250.1."
+    to:   "10.240.1."
+  - name: "GENERAL v4 prefix shift"
+    from: "10.250.2."
+    to:   "10.240.2."
+  - name: "CAPTIVE v4 prefix shift"
+    from: "10.250.3."
+    to:   "10.240.3."
+  # VMNET inherits the .4 third octet that must not move.
+  - name: "VMNET v4 prefix shift"
+    from: "10.250.0."
+    to:   "10.240.4."
+
+  # Longer IPv6 literals run first so sequential replacements keep prefixes
+  # intact. The generic VMNET pattern needs a colon immediately after b01:, so
+  # it cannot match the 210::, 211::, 212::, or 213:: values produced above it.
+  - name: "v6 NAT64 prefix shift"
+    from: "3d06:bad:b01:6464::"
+    to:   "3d06:bad:b01:2664::"
+  - name: "v6 PRIVILEGED prefix shift"
+    from: "3d06:bad:b01:1::"
+    to:   "3d06:bad:b01:211::"
+  - name: "v6 GENERAL prefix shift"
+    from: "3d06:bad:b01:2::"
+    to:   "3d06:bad:b01:212::"
+  # CAPTIVE is IPv4-only on prod today, so this matches nothing yet. It stays
+  # because CAPTIVE is due to become IPv6 and the shift must be in place then.
+  - name: "v6 CAPTIVE prefix shift"
+    from: "3d06:bad:b01:3::"
+    to:   "3d06:bad:b01:213::"
+  - name: "v6 IPv6OnlyVLAN prefix shift"
+    from: "3d06:bad:b01:64::"
+    to:   "3d06:bad:b01:264::"
+  - name: "v6 WAN prefix shift"
+    from: "3d06:bad:b01:fe::"
+    to:   "3d06:bad:b01:201::"
+  - name: "v6 VMNET prefix shift"
+    from: "3d06:bad:b01::"
+    to:   "3d06:bad:b01:210::"
+
+  # MANAGEMENT is gone, so drop it from the INTERNAL interface group. That
+  # group supplies the outbound-allow and NAT64 rules the guest segment needs.
+  - name: "INTERNAL group membership without MANAGEMENT"
+    from: "lan,lo0,opt1,opt4,opt5,opt6,opt7,opt8,opt9"
+    to:   "lan,lo0,opt1,opt4,opt5,opt6,opt7,opt8"
+
+  - name: "domain literal"
+    from: "home.goodkind.io"
+    to:   "suburban.goodkind.io"
+  - name: "captive portal FQDN"
+    from: "captive.chaotic.dog"
+    to:   "captive.suburban.goodkind.io"
+  - name: "chaotic.dog domain literal"
+    from: "chaotic.dog"
+    to:   "suburban.goodkind.io"
+  # Runs after the VMNET shift, so it matches what that shift produced from
+  # prod's 3d06:bad:b01::53 rather than any literal present in the capture.
+  - name: "v6 DNS forwarder"
+    from: "3d06:bad:b01:210::53"
+    to:   "2606:4700:4700::1111"

@@ -1,0 +1,75 @@
+#!/bin/sh
+# shellcheck shell=sh
+# mwan-opnsense-run: the supervised entry point for daemon(8) -r.
+#
+# daemon(8) re-execs this shim on every (re)spawn, so it runs the deploy
+# preflight before every start of the daemon, then exec's the daemon
+# (replacing this shim's process image, preserving argv0 so the binary
+# starts in daemon mode). The preflight verifies a freshly deployed binary
+# and reverts to the last known-good binary if the new one fails to come up
+# healthy.
+#
+# Paths mirror the deploy state machine in internal/opnsense/svc/deploy.go.
+# /var/run is a memory disk on OPNsense, so pending-verify, deploy.state,
+# and the boot-attempt marker are per-boot. That is the intended scope: the
+# boot-attempt marker bounds an in-session crashloop to a single revert, and
+# a reboot starts clean on .current.
+
+set -u
+
+sbin_dir="/usr/local/sbin"
+daemon_bin="${sbin_dir}/mwan-opnsense"
+pending="/var/run/mwan-opnsense.pending-verify"
+state="/var/run/mwan-opnsense.deploy.state"
+attempt="/var/run/mwan-opnsense.boot-attempt"
+
+state_health() {
+	# Print the health value from the colon-delimited deploy.state file.
+	[ -f "${state}" ] || return 0
+	while IFS=: read -r key val; do
+		if [ "${key}" = "health" ]; then
+			printf '%s' "${val}"
+			return 0
+		fi
+	done < "${state}"
+}
+
+preflight() {
+	# Steady state: no deploy awaiting verification.
+	if [ ! -f "${pending}" ]; then
+		rm -f "${attempt}"
+		return 0
+	fi
+
+	# The deploy was marked healthy over the serial channel: clear and run.
+	if [ "$(state_health)" = "ok" ]; then
+		rm -f "${pending}" "${attempt}"
+		return 0
+	fi
+
+	if [ -f "${attempt}" ]; then
+		# The new binary already had its turn and exited before reaching
+		# health=ok (a crash). Revert to the last known-good binary. The
+		# order is load-bearing: a first spawn must run the new binary, and
+		# only a crash-respawn reverts, so the deploy can actually land.
+		if [ -f "${sbin_dir}/mwan-opnsense.previous" ]; then
+			logger -t mwan-opnsense-deploy "verify failed; reverting to .previous"
+			cp -f "${sbin_dir}/mwan-opnsense.previous" "${sbin_dir}/mwan-opnsense.current" \
+				|| logger -t mwan-opnsense-deploy "revert copy failed; running .current as-is"
+		else
+			logger -t mwan-opnsense-deploy "verify failed but no .previous; running .current as-is"
+		fi
+		# Clear the markers either way, so a missing .previous fails safe
+		# instead of reverting forever.
+		rm -f "${pending}" "${attempt}"
+		return 0
+	fi
+
+	# First spawn of the new binary after the deploy. Give it a turn, and
+	# record the attempt so a crash-respawn before health=ok reverts above.
+	: > "${attempt}"
+	return 0
+}
+
+preflight
+exec "${daemon_bin}"

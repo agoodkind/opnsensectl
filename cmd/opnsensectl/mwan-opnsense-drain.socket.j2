@@ -1,0 +1,13 @@
+[Unit]
+Description=MWAN OPNsense chardev drainer relay socket
+
+[Socket]
+# The relay socket the host bridge dials in place of the qemu chardev. Path is
+# templated from [opnsense.drain].listen; keep it in sync with config.toml.
+ListenStream={{ mwan_opnsense_drain_listen }}
+FileDescriptorName=relay
+SocketMode=0600
+Service=mwan-opnsense-drain.service
+
+[Install]
+WantedBy=sockets.target
