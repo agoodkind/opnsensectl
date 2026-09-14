@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: agoodkind/go-makefile/.github/workflows/_release.yml@main
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      platforms: linux/amd64 freebsd/amd64
+      # One binary name, verified after publish for every platform, so a
+      # release that dropped an archive fails the run instead of shipping a
+      # partial set.
+      binary: opnsensectl
+    secrets: inherit

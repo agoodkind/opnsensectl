@@ -1,0 +1,36 @@
+name: CI
+
+# Run CI on every branch push, exactly once, with no duplication. There is no
+# `pull_request` trigger: a same-repo PR would double-run (push + pull_request),
+# and same-repo PRs already show these checks because GitHub matches checks to
+# the head commit SHA. `'**'` matches branches but not tags, so the tag-driven
+# release workflow is untouched. A repo that accepts fork PRs can add a
+# fork-guarded `pull_request` trigger.
+on:
+  push:
+    branches: ['**']
+
+# Feature branch CI runs cancel superseded runs, and default branch CI runs are never cancelled mid-flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    uses: agoodkind/go-makefile/.github/workflows/_ci.yml@main
+    # The reusable CI workflow runs the shared release build once per relevant
+    # push (checkout, OIDC, and attestation), and secrets: inherit forwards the
+    # signing material so that build is signed the same way a real release is.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    secrets: inherit
+    with:
+      go_tool_packages: github.com/bufbuild/buf/cmd/buf@latest google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+      # Match release.yml, so the build gate compiles exactly the platforms
+      # the release ships.
+      release_platforms: linux/amd64 freebsd/amd64
