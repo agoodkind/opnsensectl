@@ -32,5 +32,6 @@ jobs:
     with:
       go_tool_packages: github.com/bufbuild/buf/cmd/buf@latest google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
       # Match release.yml, so the build gate compiles exactly the platforms
-      # the release ships.
+      # the release ships, pure Go.
       release_platforms: linux/amd64 freebsd/amd64
+      cgo: false

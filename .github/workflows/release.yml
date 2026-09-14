@@ -14,6 +14,8 @@ jobs:
       attestations: write
     with:
       platforms: linux/amd64 freebsd/amd64
+      # Pure Go on both platforms: the runner has no freebsd cgo toolchain.
+      cgo: false
       # One binary name, verified after publish for every platform, so a
       # release that dropped an archive fails the run instead of shipping a
       # partial set.
