@@ -8,18 +8,13 @@ import (
 	"testing"
 )
 
-// renderShim writes a sourceable copy of the preflight shim with its tail
-// (the `preflight` call and the `exec` of the daemon) removed, so a test can
-// source it under /bin/sh to define the functions and default paths, then
+// renderShim writes a sourceable copy of the embedded preflight shim with its
+// tail (the `preflight` call and the `exec` of the daemon) removed, so a test
+// can source it under /bin/sh to define the functions and default paths, then
 // override the paths and call `preflight` directly.
 func renderShim(t *testing.T, dir string) string {
 	t.Helper()
-	srcPath := filepath.Join("opnsense-src", "usr", "local", "libexec", "mwan-opnsense-run")
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		t.Fatalf("read shim: %v", err)
-	}
-	rendered := string(data)
+	rendered := string(runShim)
 	neutralized := strings.Replace(rendered, "preflight\nexec \"${daemon_bin}\"\n", "", 1)
 	if neutralized == rendered {
 		t.Fatal("shim does not contain the expected preflight+exec tail")
@@ -44,11 +39,7 @@ func shimWrite(t *testing.T, path, content string) {
 // preflight (that logic moved into the shim).
 func TestRCDStartUsesRestartAndShim(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile(filepath.Join("opnsense-src", "etc", "rc.d", "mwan_opnsense"))
-	if err != nil {
-		t.Fatalf("read rc.d script: %v", err)
-	}
-	script := string(data)
+	script := string(rcdScript)
 	wants := []string{
 		`run_shim="/usr/local/libexec/mwan-opnsense-run"`,
 		`/usr/sbin/daemon -r -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${run_shim}"`,

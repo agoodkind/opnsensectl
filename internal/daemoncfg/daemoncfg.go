@@ -1,48 +1,56 @@
 // Package daemoncfg loads the in-VM mwan-opnsense daemon's runtime
-// configuration from /var/lib/mwan/daemon.toml.
+// configuration from /usr/local/etc/opnsensectl.conf.
 //
-// This file is daemon-side, owned by root, mode 0600, and is templated
-// by the rc.d script (etc/rc.d/mwan_opnsense) from rc.conf.d-overridable
-// variables before the daemon starts. The daemon itself never writes it.
+// This file is daemon-side, owned by root, mode 0600. opnsensectl install
+// writes it with the defaults in [DefaultFile] only when it is absent, so an
+// operator's edits survive a reinstall. The daemon itself never writes it.
 //
-// The host-side configuration at /etc/mwan/config.toml is intentionally
-// a separate file with a different schema; daemoncfg does not read it
-// and the two file paths never overlap.
+// The host-side configuration at /etc/opnsensectl/config.toml is intentionally
+// a separate file with a different schema; daemoncfg does not read it and the
+// two file paths never overlap.
 //
 // The package is cross-platform on purpose. It only does TOML parsing
 // and file IO, both portable; keeping it free of a //go:build freebsd
-// tag means cmd/mwan/opnsense_daemon_serve.go (which is itself built on
+// tag means cmd/opnsensectl/opnsense_daemon_serve.go (which is itself built on
 // both Linux and FreeBSD) can call daemoncfg.Load without any
 // build-tag gymnastics in callers or tests.
 package daemoncfg
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 
 	"github.com/BurntSushi/toml"
 )
 
-// DefaultPath is the on-disk location of the daemon-side TOML. The
-// rc.d script writes this file before starting the daemon. The path is
-// intentionally not operator-tunable: it is a runtime contract between
-// the rc.d script and the daemon, not a user-facing knob.
-const DefaultPath = "/var/lib/mwan/daemon.toml"
+const (
+	// DefaultPath is the on-disk location of the daemon-side TOML, which
+	// opnsensectl install writes. The path is intentionally not
+	// operator-tunable: it is a runtime contract between the install verb and
+	// the daemon, not a user-facing knob.
+	DefaultPath = "/usr/local/etc/opnsensectl.conf"
+	// LegacyPath is the file the rc.d script templated before DefaultPath
+	// existed. Load reads it only while DefaultPath is absent, so a daemon
+	// binary that reaches a router before opnsensectl install runs still
+	// starts with the values that router was rendered with.
+	LegacyPath = "/var/lib/mwan/daemon.toml"
+)
 
-// missingFileMessage is the exact error string returned when the daemon-side
-// TOML is absent. The rc.d script is responsible for templating the TOML before
-// exec'ing the daemon, so a missing file always indicates a packaging or rc.d
-// bug, never a normal startup.
-const missingFileMessage = "daemoncfg: /var/lib/mwan/daemon.toml not found; " +
-	"the rc.d script must template this file before starting the daemon"
+// DefaultFile is the content opnsensectl install writes to [DefaultPath]
+// when that file is absent.
+//
+//go:embed opnsensectl.conf
+var DefaultFile []byte
 
-// DaemonSection is the [daemon] table in /var/lib/mwan/daemon.toml.
+// DaemonSection is the [daemon] table in the daemon-side TOML.
 // Every field is required; daemoncfg.Load rejects empty values rather
-// than falling back to compiled defaults. Logfile is recorded here for
-// contract completeness even though the daemon itself does not open it:
-// the rc.d wrapper keeps stdout/stderr redirection and pidfile
+// than falling back to compiled defaults. Logfile records where the rc.d
+// wrapper sends daemon output even though the daemon itself does not open
+// it: the rc.d wrapper keeps stdout/stderr redirection and pidfile
 // ownership in daemon(8), and the serve process only consumes the
 // non-supervision runtime fields.
 type DaemonSection struct {
@@ -60,23 +68,39 @@ type Config struct {
 	Daemon DaemonSection `toml:"daemon"`
 }
 
-// Load reads /var/lib/mwan/daemon.toml, validates that every required
-// field is present, and returns the parsed config. There is no fallback
-// to compiled defaults: a missing file or missing field is a hard error
-// so the daemon refuses to start with an under-specified config.
+// Load reads [DefaultPath], and reads [LegacyPath] only when DefaultPath does
+// not exist, then validates that every required field is present. There is no
+// fallback to compiled defaults: a missing file or missing field is a hard
+// error so the daemon refuses to start with an under-specified config. A
+// DefaultPath that exists but cannot be read, parsed, or validated is an error
+// rather than a reason to read LegacyPath, so a broken new file is never
+// masked.
 func Load() (*Config, error) {
-	return loadFrom(DefaultPath)
+	return loadFirstPresent(DefaultPath, LegacyPath)
 }
 
-// loadFrom is the path-injected variant used by tests; production
-// callers should use Load().
+// loadFirstPresent is the path-injected variant used by tests; production
+// callers should use Load(). When neither file exists the error names
+// primary, the file opnsensectl install writes.
+func loadFirstPresent(primary, legacy string) (*Config, error) {
+	cfg, primaryErr := loadFrom(primary)
+	if !errors.Is(primaryErr, fs.ErrNotExist) {
+		return cfg, primaryErr
+	}
+	slog.Warn("daemoncfg: file absent, reading the legacy rc.d-templated file",
+		"path", primary, "legacy_path", legacy)
+	cfg, legacyErr := loadFrom(legacy)
+	if !errors.Is(legacyErr, fs.ErrNotExist) {
+		return cfg, legacyErr
+	}
+	slog.Error("daemoncfg: no config file", "path", primary, "legacy_path", legacy, "err", primaryErr)
+	return nil, fmt.Errorf("daemoncfg: %s not found; run opnsensectl install to write it: %w",
+		primary, primaryErr)
+}
+
 func loadFrom(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && path == DefaultPath {
-			slog.Error("daemoncfg: default file missing", "path", path, "err", err)
-			return nil, errors.New(missingFileMessage)
-		}
 		slog.Error("daemoncfg: read failed", "path", path, "err", err)
 		return nil, fmt.Errorf("daemoncfg: read %s: %w", path, err)
 	}
@@ -95,7 +119,7 @@ func loadFrom(path string) (*Config, error) {
 
 // validate enforces that every field in the daemon TOML schema is present and
 // non-empty. The error message cites the offending TOML key so operators can
-// fix the rc.d-templated file directly.
+// fix the file directly.
 func validate(cfg *Config) error {
 	d := &cfg.Daemon
 	if d.SerialPath == "" {

@@ -1,6 +1,8 @@
 package daemoncfg
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,55 +19,115 @@ logfile = "/var/log/mwan-opnsense.log"
 state_dir = "/var/lib/mwan/transfers"
 `
 
-func TestLoadHappyPath(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "daemon.toml")
-	if err := os.WriteFile(path, []byte(happyTOML), 0o600); err != nil {
-		t.Fatalf("write tmp toml: %v", err)
-	}
+// wantDefaults is the config the rc.d script templated from its compiled
+// fallbacks before install owned the file.
+var wantDefaults = DaemonSection{
+	SerialPath:    "/dev/ttyV0.1",
+	Baud:          115200,
+	ConfigXMLPath: "/conf/config.xml",
+	BackupDir:     "/conf/backup",
+	Logfile:       "/var/log/mwan-opnsense.log",
+	StateDir:      "/var/lib/mwan/transfers",
+}
 
-	cfg, err := loadFrom(path)
-	if err != nil {
-		t.Fatalf("loadFrom: %v", err)
-	}
-
-	wantSerial := "/dev/ttyV0.1"
-	if cfg.Daemon.SerialPath != wantSerial {
-		t.Errorf("serial_path: got %q, want %q", cfg.Daemon.SerialPath, wantSerial)
-	}
-	if cfg.Daemon.Baud != 115200 {
-		t.Errorf("baud: got %d, want 115200", cfg.Daemon.Baud)
-	}
-	if cfg.Daemon.ConfigXMLPath != "/conf/config.xml" {
-		t.Errorf("config_xml_path: got %q", cfg.Daemon.ConfigXMLPath)
-	}
-	if cfg.Daemon.BackupDir != "/conf/backup" {
-		t.Errorf("backup_dir: got %q", cfg.Daemon.BackupDir)
-	}
-	if cfg.Daemon.Logfile != "/var/log/mwan-opnsense.log" {
-		t.Errorf("logfile: got %q", cfg.Daemon.Logfile)
-	}
-	if cfg.Daemon.StateDir != "/var/lib/mwan/transfers" {
-		t.Errorf("state_dir: got %q", cfg.Daemon.StateDir)
+func writeTOML(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }
 
-func TestLoadMissingDefaultFileMessage(t *testing.T) {
-	// If /var/lib/mwan/daemon.toml happens to exist on the test host (it
-	// will not in CI, but a developer running tests on a FreeBSD VM could
-	// have it), this test would not be checking what we think it checks.
-	if _, statErr := os.Stat(DefaultPath); statErr == nil {
-		t.Skipf("DefaultPath %s exists on host; skipping missing-file assertion", DefaultPath)
+func TestLoadHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "opnsensectl.conf")
+	writeTOML(t, path, happyTOML)
+
+	cfg, err := loadFirstPresent(path, filepath.Join(dir, "absent.toml"))
+	if err != nil {
+		t.Fatalf("loadFirstPresent: %v", err)
 	}
-	_, err := Load()
-	if err == nil {
-		t.Fatal("Load with missing DefaultPath: want error, got nil")
+	if cfg.Daemon != wantDefaults {
+		t.Errorf("daemon = %+v, want %+v", cfg.Daemon, wantDefaults)
 	}
-	want := "daemoncfg: /var/lib/mwan/daemon.toml not found; " +
-		"the rc.d script must template this file before starting the daemon"
-	if err.Error() != want {
-		t.Errorf("missing-file error message:\n got: %q\nwant: %q", err.Error(), want)
+}
+
+// TestDefaultFileLoads proves the file install writes starts the daemon with
+// the same values the rc.d script used to template.
+func TestDefaultFileLoads(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "opnsensectl.conf")
+	writeTOML(t, path, string(DefaultFile))
+
+	cfg, err := loadFirstPresent(path, filepath.Join(dir, "absent.toml"))
+	if err != nil {
+		t.Fatalf("load DefaultFile: %v", err)
 	}
+	if cfg.Daemon != wantDefaults {
+		t.Errorf("DefaultFile daemon = %+v, want %+v", cfg.Daemon, wantDefaults)
+	}
+}
+
+func TestLoadFirstPresent(t *testing.T) {
+	legacyTOML := strings.Replace(happyTOML, "baud = 115200", "baud = 921600", 1)
+
+	t.Run("primary wins over legacy", func(t *testing.T) {
+		dir := t.TempDir()
+		primary := filepath.Join(dir, "opnsensectl.conf")
+		legacy := filepath.Join(dir, "daemon.toml")
+		writeTOML(t, primary, happyTOML)
+		writeTOML(t, legacy, legacyTOML)
+
+		cfg, err := loadFirstPresent(primary, legacy)
+		if err != nil {
+			t.Fatalf("loadFirstPresent: %v", err)
+		}
+		if cfg.Daemon.Baud != 115200 {
+			t.Errorf("baud = %d, want the primary file's 115200", cfg.Daemon.Baud)
+		}
+	})
+
+	t.Run("legacy read while primary absent", func(t *testing.T) {
+		dir := t.TempDir()
+		legacy := filepath.Join(dir, "daemon.toml")
+		writeTOML(t, legacy, legacyTOML)
+
+		cfg, err := loadFirstPresent(filepath.Join(dir, "opnsensectl.conf"), legacy)
+		if err != nil {
+			t.Fatalf("loadFirstPresent: %v", err)
+		}
+		if cfg.Daemon.Baud != 921600 {
+			t.Errorf("baud = %d, want the legacy file's 921600", cfg.Daemon.Baud)
+		}
+	})
+
+	t.Run("broken primary is not masked by legacy", func(t *testing.T) {
+		dir := t.TempDir()
+		primary := filepath.Join(dir, "opnsensectl.conf")
+		legacy := filepath.Join(dir, "daemon.toml")
+		writeTOML(t, primary, strings.Replace(happyTOML, `state_dir = "/var/lib/mwan/transfers"`, "", 1))
+		writeTOML(t, legacy, legacyTOML)
+
+		_, err := loadFirstPresent(primary, legacy)
+		if err == nil || !strings.Contains(err.Error(), "state_dir") {
+			t.Fatalf("err = %v, want the primary file's missing state_dir", err)
+		}
+	})
+
+	t.Run("both absent names primary and install", func(t *testing.T) {
+		dir := t.TempDir()
+		primary := filepath.Join(dir, "opnsensectl.conf")
+
+		_, err := loadFirstPresent(primary, filepath.Join(dir, "daemon.toml"))
+		if err == nil {
+			t.Fatal("loadFirstPresent with no files: want error, got nil")
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("err = %v, want fs.ErrNotExist in the chain", err)
+		}
+		if !strings.Contains(err.Error(), primary) || !strings.Contains(err.Error(), "opnsensectl install") {
+			t.Errorf("err = %q, want it to name %s and opnsensectl install", err, primary)
+		}
+	})
 }
 
 func TestLoadRequiredFieldMissing(t *testing.T) {
@@ -153,10 +215,8 @@ logfile = "/var/log/mwan-opnsense.log"
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, "daemon.toml")
-			if err := os.WriteFile(path, []byte(tc.toml), 0o600); err != nil {
-				t.Fatalf("write tmp toml: %v", err)
-			}
+			path := filepath.Join(dir, "opnsensectl.conf")
+			writeTOML(t, path, tc.toml)
 			_, err := loadFrom(path)
 			if err == nil {
 				t.Fatalf("loadFrom: want error mentioning %q, got nil", tc.wantSub)

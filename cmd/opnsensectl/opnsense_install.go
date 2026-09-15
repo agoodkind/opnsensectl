@@ -1,0 +1,325 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	_ "embed"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"runtime"
+	"syscall"
+	"time"
+
+	sdbus "github.com/coreos/go-systemd/v22/dbus"
+
+	"goodkind.io/opnsensectl/internal/daemoncfg"
+	"goodkind.io/opnsensectl/internal/svc"
+)
+
+// The router service files and the host units opnsensectl install writes. The
+// rcd and shim tests read these same embedded bytes.
+var (
+	//go:embed opnsense-src/etc/rc.d/mwan_opnsense
+	rcdScript []byte
+	//go:embed opnsense-src/usr/local/libexec/mwan-opnsense-run
+	runShim []byte
+	//go:embed opnsense-src/boot/loader.conf.d/mwan_opnsense.conf
+	loaderEntry []byte
+	//go:embed opnsense-src/etc/rc.conf.d/mwan_opnsense.sample
+	rcConfDefaults []byte
+	//go:embed mwan-opnsense-host.service
+	hostServiceUnit []byte
+	//go:embed mwan-opnsense-drain.service
+	drainServiceUnit []byte
+)
+
+const (
+	// installRoot is the filesystem root install writes under.
+	installRoot = "/"
+	// rootUID and rootGID own every installed file: root:wheel on FreeBSD
+	// and root:root on linux are both uid 0 and gid 0.
+	rootUID = 0
+	rootGID = 0
+
+	hostUnitName  = "mwan-opnsense-host.service"
+	drainUnitName = "mwan-opnsense-drain.service"
+)
+
+// installPlatform is the [runtime.GOOS] value install acts on.
+type installPlatform string
+
+const (
+	// installPlatformRouter is the OPNsense guest.
+	installPlatformRouter installPlatform = "freebsd"
+	// installPlatformHost is the Proxmox host.
+	installPlatformHost installPlatform = "linux"
+)
+
+// installFile is one file install places. absentOnly marks an operator-owned
+// settings file: install writes its defaults when the file is missing and
+// never touches an existing copy.
+type installFile struct {
+	path       string
+	content    []byte
+	mode       fs.FileMode
+	absentOnly bool
+}
+
+// routerInstallFiles lists what install writes on the OPNsense guest. The
+// binary, its symlink, and the rc.conf enable line stay with the deploy.
+func routerInstallFiles() []installFile {
+	return []installFile{
+		{path: "/usr/local/etc/rc.d/mwan_opnsense", content: rcdScript, mode: 0o755, absentOnly: false},
+		{path: "/usr/local/libexec/mwan-opnsense-run", content: runShim, mode: 0o755, absentOnly: false},
+		{path: "/boot/loader.conf.d/mwan_opnsense.conf", content: loaderEntry, mode: 0o644, absentOnly: false},
+		{path: "/etc/rc.conf.d/mwan_opnsense", content: rcConfDefaults, mode: 0o644, absentOnly: true},
+		{path: daemoncfg.DefaultPath, content: daemoncfg.DefaultFile, mode: 0o600, absentOnly: true},
+	}
+}
+
+// hostInstallFiles lists the systemd units install writes on the Proxmox host.
+// The drainer binds its relay socket itself, so there is no socket unit.
+func hostInstallFiles() []installFile {
+	return []installFile{
+		{path: "/etc/systemd/system/" + hostUnitName, content: hostServiceUnit, mode: 0o644, absentOnly: false},
+		{path: "/etc/systemd/system/" + drainUnitName, content: drainServiceUnit, mode: 0o644, absentOnly: false},
+	}
+}
+
+// unitManager is the part of the systemd D-Bus API install calls, so a test
+// can stand in for the system bus.
+type unitManager interface {
+	StopUnitContext(ctx context.Context, name string, mode string, ch chan<- string) (int, error)
+	DisableUnitFilesContext(ctx context.Context, files []string, runtimeOnly bool) ([]sdbus.DisableUnitFileChange, error)
+	EnableUnitFilesContext(ctx context.Context, files []string, runtimeOnly bool, force bool) (bool, []sdbus.EnableUnitFileChange, error)
+	ReloadContext(ctx context.Context) error
+	Close()
+}
+
+func openSystemBus(ctx context.Context) (unitManager, error) {
+	conn, err := sdbus.NewSystemConnectionContext(ctx)
+	if err != nil {
+		return nil, wrapErr(ctx, "install: connect to systemd", err)
+	}
+	return conn, nil
+}
+
+// installer writes files under root, owned by uid and gid, and prints one line
+// to out for every change it makes.
+type installer struct {
+	root string
+	uid  int
+	gid  int
+	out  io.Writer
+}
+
+// runOPNsenseInstall writes this platform's service files: the rc.d service on
+// FreeBSD, and the enabled systemd units on linux. A rerun changes nothing
+// that is already in place.
+func runOPNsenseInstall(args []string) int {
+	for _, a := range args {
+		if a == "-h" || a == "--help" || a == "help" {
+			fmt.Fprintln(os.Stdout, "usage: opnsensectl install")
+			fmt.Fprintln(os.Stdout, "")
+			fmt.Fprintln(os.Stdout, "On FreeBSD, write the rc.d script, the run shim, the loader entry, and the")
+			fmt.Fprintln(os.Stdout, "settings defaults. On linux, write and enable the bridge and drain units.")
+			return 0
+		}
+	}
+	if len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "opnsensectl install: unexpected arguments: %v\n", args)
+		return 2
+	}
+
+	ctx := context.Background()
+	in := installer{root: installRoot, uid: rootUID, gid: rootGID, out: os.Stdout}
+	var changed int
+	var err error
+	switch installPlatform(runtime.GOOS) {
+	case installPlatformRouter:
+		changed, err = in.placeAll(ctx, routerInstallFiles())
+	case installPlatformHost:
+		changed, err = in.installHost(ctx, openSystemBus)
+	default:
+		err = wrapErr(ctx, "install", fmt.Errorf("unsupported platform %s", runtime.GOOS))
+	}
+	if err != nil {
+		return printAndExit("install", err)
+	}
+	if changed == 0 {
+		fmt.Fprintln(os.Stdout, "install: no change")
+		return 0
+	}
+	fmt.Fprintf(os.Stdout, "install: %d changes\n", changed)
+	return 0
+}
+
+const (
+	// hostUnitDir holds the units install writes and the socket unit it removes.
+	hostUnitDir = "/etc/systemd/system"
+	// drainSocketName is the socket unit the ansible deploy installed. The
+	// drainer binds its relay socket itself, so install removes this unit.
+	drainSocketName = "mwan-opnsense-drain.socket"
+	// stopJobMode and stopJobDone are the systemd job mode install stops the
+	// socket with and the job result that means the stop finished.
+	stopJobMode = "replace"
+	stopJobDone = "done"
+	// socketStopTimeout bounds the wait for the socket stop job to finish.
+	socketStopTimeout = 90 * time.Second
+)
+
+// installHost writes the host units, removes a leftover drain socket unit,
+// enables the units, and reloads systemd. The final reload runs on every call,
+// not only after a change, so a rerun after a run that wrote a unit and then
+// failed still leaves systemd on the units on disk.
+func (in installer) installHost(ctx context.Context, openBus func(context.Context) (unitManager, error)) (int, error) {
+	changed, err := in.placeAll(ctx, hostInstallFiles())
+	if err != nil {
+		return changed, err
+	}
+	bus, err := openBus(ctx)
+	if err != nil {
+		return changed, err
+	}
+	defer bus.Close()
+
+	removed, err := in.removeDrainSocket(ctx, bus)
+	changed += removed
+	if err != nil {
+		return changed, err
+	}
+
+	_, enableChanges, err := bus.EnableUnitFilesContext(ctx, []string{hostUnitName, drainUnitName}, false, false)
+	if err != nil {
+		return changed, wrapErr(ctx, "install: enable units", err)
+	}
+	for _, change := range enableChanges {
+		fmt.Fprintf(in.out, "%s %s -> %s\n", change.Type, change.Filename, change.Destination)
+	}
+	if err := bus.ReloadContext(ctx); err != nil {
+		return changed + len(enableChanges), wrapErr(ctx, "install: daemon-reload", err)
+	}
+	return changed + len(enableChanges), nil
+}
+
+// removeDrainSocket stops, disables, and deletes the drain socket unit the
+// ansible deploy installed, and returns how many changes it made. It reloads
+// systemd before the stop, so the manager has dropped the old drain unit's
+// Requires= on the socket and the stop does not take the drainer down with
+// it. A host without the socket unit file gets no systemd calls here.
+func (in installer) removeDrainSocket(ctx context.Context, bus unitManager) (int, error) {
+	target := filepath.Join(in.root, hostUnitDir, drainSocketName)
+	_, err := os.Lstat(target)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, wrapErr(ctx, "install: stat "+target, err)
+	}
+	slog.InfoContext(ctx, "install: removing the leftover drain socket unit",
+		"unit", drainSocketName, "path", target)
+
+	if err := bus.ReloadContext(ctx); err != nil {
+		return 0, wrapErr(ctx, "install: daemon-reload", err)
+	}
+	if err := stopUnit(ctx, bus, drainSocketName); err != nil {
+		return 0, err
+	}
+	disableChanges, err := bus.DisableUnitFilesContext(ctx, []string{drainSocketName}, false)
+	if err != nil {
+		return 0, wrapErr(ctx, "install: disable "+drainSocketName, err)
+	}
+	for _, change := range disableChanges {
+		fmt.Fprintf(in.out, "%s %s\n", change.Type, change.Filename)
+	}
+	if err := os.Remove(target); err != nil {
+		return len(disableChanges), wrapErr(ctx, "install: remove "+target, err)
+	}
+	fmt.Fprintf(in.out, "removed %s\n", filepath.Join(hostUnitDir, drainSocketName))
+	return len(disableChanges) + 1, nil
+}
+
+// stopUnit stops name and waits, up to socketStopTimeout, for the stop job to
+// finish. A job result other than done is an error.
+func stopUnit(ctx context.Context, bus unitManager, name string) error {
+	waitCtx, cancel := context.WithTimeout(ctx, socketStopTimeout)
+	defer cancel()
+	result := make(chan string, 1)
+	if _, err := bus.StopUnitContext(waitCtx, name, stopJobMode, result); err != nil {
+		return wrapErr(ctx, "install: stop "+name, err)
+	}
+	select {
+	case <-waitCtx.Done():
+		return wrapErr(ctx, "install: stop "+name, waitCtx.Err())
+	case outcome := <-result:
+		if outcome != stopJobDone {
+			return wrapErr(ctx, "install: stop "+name, fmt.Errorf("job result %s", outcome))
+		}
+		return nil
+	}
+}
+
+// placeAll places every file in order and returns how many it wrote.
+func (in installer) placeAll(ctx context.Context, files []installFile) (int, error) {
+	changed := 0
+	for _, file := range files {
+		wrote, err := in.place(ctx, file)
+		if err != nil {
+			return changed, err
+		}
+		if wrote {
+			changed++
+			fmt.Fprintf(in.out, "wrote %s\n", file.path)
+		}
+	}
+	return changed, nil
+}
+
+// place writes file unless the target already holds its content, mode, and
+// owner, or unless the file is absentOnly and the target exists. It reports
+// whether it wrote. The parent directory must already exist.
+func (in installer) place(ctx context.Context, file installFile) (bool, error) {
+	target := filepath.Join(in.root, file.path)
+	info, err := os.Lstat(target)
+	switch {
+	case err == nil && file.absentOnly:
+		return false, nil
+	case err == nil:
+		current, matchErr := in.inPlace(ctx, target, info, file)
+		if matchErr != nil || current {
+			return false, matchErr
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return false, wrapErr(ctx, "install: stat "+target, err)
+	}
+
+	if err := svc.AtomicWriteFile(ctx, target, file.content, file.mode); err != nil {
+		return false, wrapErr(ctx, "install: write "+target, err)
+	}
+	if err := os.Lchown(target, in.uid, in.gid); err != nil {
+		return false, wrapErr(ctx, "install: chown "+target, err)
+	}
+	return true, nil
+}
+
+// inPlace reports whether target is a regular file that already holds file's
+// content and mode and is owned by the installer's uid and gid.
+func (in installer) inPlace(ctx context.Context, target string, info fs.FileInfo, file installFile) (bool, error) {
+	if !info.Mode().IsRegular() || info.Mode().Perm() != file.mode {
+		return false, nil
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != in.uid || int(stat.Gid) != in.gid {
+		return false, nil
+	}
+	current, err := os.ReadFile(filepath.Clean(target))
+	if err != nil {
+		return false, wrapErr(ctx, "install: read "+target, err)
+	}
+	return bytes.Equal(current, file.content), nil
+}

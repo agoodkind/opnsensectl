@@ -19,6 +19,7 @@ require (
 
 require (
 	github.com/antchfx/xpath v1.3.6 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/kr/text v0.2.0 // indirect
