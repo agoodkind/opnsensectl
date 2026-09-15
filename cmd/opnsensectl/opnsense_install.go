@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	sdbus "github.com/coreos/go-systemd/v22/dbus"
 
@@ -92,6 +94,8 @@ func hostInstallFiles() []installFile {
 // unitManager is the part of the systemd D-Bus API install calls, so a test
 // can stand in for the system bus.
 type unitManager interface {
+	StopUnitContext(ctx context.Context, name string, mode string, ch chan<- string) (int, error)
+	DisableUnitFilesContext(ctx context.Context, files []string, runtimeOnly bool) ([]sdbus.DisableUnitFileChange, error)
 	EnableUnitFilesContext(ctx context.Context, files []string, runtimeOnly bool, force bool) (bool, []sdbus.EnableUnitFileChange, error)
 	ReloadContext(ctx context.Context) error
 	Close()
@@ -155,9 +159,24 @@ func runOPNsenseInstall(args []string) int {
 	return 0
 }
 
-// installHost writes the host units, enables them, and reloads systemd. The
-// reload runs on every call, not only after a change, so a rerun after a run
-// that wrote a unit and then failed still leaves systemd on the units on disk.
+const (
+	// hostUnitDir holds the units install writes and the socket unit it removes.
+	hostUnitDir = "/etc/systemd/system"
+	// drainSocketName is the socket unit the ansible deploy installed. The
+	// drainer binds its relay socket itself, so install removes this unit.
+	drainSocketName = "mwan-opnsense-drain.socket"
+	// stopJobMode and stopJobDone are the systemd job mode install stops the
+	// socket with and the job result that means the stop finished.
+	stopJobMode = "replace"
+	stopJobDone = "done"
+	// socketStopTimeout bounds the wait for the socket stop job to finish.
+	socketStopTimeout = 90 * time.Second
+)
+
+// installHost writes the host units, removes a leftover drain socket unit,
+// enables the units, and reloads systemd. The final reload runs on every call,
+// not only after a change, so a rerun after a run that wrote a unit and then
+// failed still leaves systemd on the units on disk.
 func (in installer) installHost(ctx context.Context, openBus func(context.Context) (unitManager, error)) (int, error) {
 	changed, err := in.placeAll(ctx, hostInstallFiles())
 	if err != nil {
@@ -168,6 +187,12 @@ func (in installer) installHost(ctx context.Context, openBus func(context.Contex
 		return changed, err
 	}
 	defer bus.Close()
+
+	removed, err := in.removeDrainSocket(ctx, bus)
+	changed += removed
+	if err != nil {
+		return changed, err
+	}
 
 	_, enableChanges, err := bus.EnableUnitFilesContext(ctx, []string{hostUnitName, drainUnitName}, false, false)
 	if err != nil {
@@ -180,6 +205,63 @@ func (in installer) installHost(ctx context.Context, openBus func(context.Contex
 		return changed + len(enableChanges), wrapErr(ctx, "install: daemon-reload", err)
 	}
 	return changed + len(enableChanges), nil
+}
+
+// removeDrainSocket stops, disables, and deletes the drain socket unit the
+// ansible deploy installed, and returns how many changes it made. It reloads
+// systemd before the stop, so the manager has dropped the old drain unit's
+// Requires= on the socket and the stop does not take the drainer down with
+// it. A host without the socket unit file gets no systemd calls here.
+func (in installer) removeDrainSocket(ctx context.Context, bus unitManager) (int, error) {
+	target := filepath.Join(in.root, hostUnitDir, drainSocketName)
+	_, err := os.Lstat(target)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, wrapErr(ctx, "install: stat "+target, err)
+	}
+	slog.InfoContext(ctx, "install: removing the leftover drain socket unit",
+		"unit", drainSocketName, "path", target)
+
+	if err := bus.ReloadContext(ctx); err != nil {
+		return 0, wrapErr(ctx, "install: daemon-reload", err)
+	}
+	if err := stopUnit(ctx, bus, drainSocketName); err != nil {
+		return 0, err
+	}
+	disableChanges, err := bus.DisableUnitFilesContext(ctx, []string{drainSocketName}, false)
+	if err != nil {
+		return 0, wrapErr(ctx, "install: disable "+drainSocketName, err)
+	}
+	for _, change := range disableChanges {
+		fmt.Fprintf(in.out, "%s %s\n", change.Type, change.Filename)
+	}
+	if err := os.Remove(target); err != nil {
+		return len(disableChanges), wrapErr(ctx, "install: remove "+target, err)
+	}
+	fmt.Fprintf(in.out, "removed %s\n", filepath.Join(hostUnitDir, drainSocketName))
+	return len(disableChanges) + 1, nil
+}
+
+// stopUnit stops name and waits, up to socketStopTimeout, for the stop job to
+// finish. A job result other than done is an error.
+func stopUnit(ctx context.Context, bus unitManager, name string) error {
+	waitCtx, cancel := context.WithTimeout(ctx, socketStopTimeout)
+	defer cancel()
+	result := make(chan string, 1)
+	if _, err := bus.StopUnitContext(waitCtx, name, stopJobMode, result); err != nil {
+		return wrapErr(ctx, "install: stop "+name, err)
+	}
+	select {
+	case <-waitCtx.Done():
+		return wrapErr(ctx, "install: stop "+name, waitCtx.Err())
+	case outcome := <-result:
+		if outcome != stopJobDone {
+			return wrapErr(ctx, "install: stop "+name, fmt.Errorf("job result %s", outcome))
+		}
+		return nil
+	}
 }
 
 // placeAll places every file in order and returns how many it wrote.

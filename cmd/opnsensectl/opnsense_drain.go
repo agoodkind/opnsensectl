@@ -260,7 +260,8 @@ func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openC
 // acquireListener adopts a relay listener passed by systemd (fd name "relay"),
 // which only a host that still carries the retired mwan-opnsense-drain.socket
 // unit passes, and otherwise binds the path itself. opnsensectl install writes
-// no socket unit, so the installed drain service always binds. A reclaimed unix
+// no socket unit and removes a leftover one, so the installed drain service
+// binds after its next restart. A reclaimed unix
 // listener must not unlink its path on Close, since systemd owns it.
 func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]*os.File, listenPath string) (net.Listener, error) {
 	if fs := byName["relay"]; len(fs) > 0 {

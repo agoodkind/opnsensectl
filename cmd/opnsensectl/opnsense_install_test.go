@@ -223,6 +223,29 @@ func (f *fakeSystemBus) EnableUnitFilesContext(_ context.Context, files []string
 	return false, changes, nil
 }
 
+func (f *fakeSystemBus) StopUnitContext(_ context.Context, name string, mode string, ch chan<- string) (int, error) {
+	f.calls = append(f.calls, fmt.Sprintf("stop %s mode=%s", name, mode))
+	ch <- "done"
+	return 1, nil
+}
+
+func (f *fakeSystemBus) DisableUnitFilesContext(_ context.Context, files []string, runtimeOnly bool) ([]sdbus.DisableUnitFileChange, error) {
+	f.calls = append(f.calls, fmt.Sprintf("disable %s runtime=%t", strings.Join(files, ","), runtimeOnly))
+	var changes []sdbus.DisableUnitFileChange
+	for _, name := range files {
+		if !f.enabled[name] {
+			continue
+		}
+		delete(f.enabled, name)
+		changes = append(changes, sdbus.DisableUnitFileChange{
+			Type:        "unlink",
+			Filename:    "/etc/systemd/system/sockets.target.wants/" + name,
+			Destination: "",
+		})
+	}
+	return changes, nil
+}
+
 func (f *fakeSystemBus) ReloadContext(_ context.Context) error {
 	f.calls = append(f.calls, "reload")
 	return nil
@@ -293,6 +316,60 @@ func TestInstallHostWritesAndEnablesUnits(t *testing.T) {
 
 	enableCall := "enable mwan-opnsense-host.service,mwan-opnsense-drain.service runtime=false force=false"
 	wantCalls := []string{enableCall, "reload", "close", enableCall, "reload", "close"}
+	if !slices.Equal(bus.calls, wantCalls) {
+		t.Errorf("systemd calls = %q\nwant %q", bus.calls, wantCalls)
+	}
+}
+
+// TestInstallHostRemovesLeftoverSocketUnit starts from a host the ansible
+// deploy left with an enabled drain socket unit. Install must reload before it
+// stops the socket, so the old drain unit's Requires= on the socket is gone
+// and the stop cannot take the drainer down; then disable and delete the
+// socket unit. A rerun must change nothing and make no socket calls.
+func TestInstallHostRemovesLeftoverSocketUnit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	in, out := newTestInstaller(t, "/etc/systemd/system")
+	socketPath := filepath.Join(in.root, "/etc/systemd/system/mwan-opnsense-drain.socket")
+	socketUnit := []byte("[Socket]\nListenStream=/var/run/mwan-opnsense-drain.sock\nService=mwan-opnsense-drain.service\n")
+	if err := os.WriteFile(socketPath, socketUnit, 0o644); err != nil {
+		t.Fatalf("seed socket unit: %v", err)
+	}
+	bus := &fakeSystemBus{calls: nil, enabled: map[string]bool{"mwan-opnsense-drain.socket": true}}
+	openBus := func(context.Context) (unitManager, error) { return bus, nil }
+
+	changed, err := in.installHost(ctx, openBus)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	// 2 units written, the socket unlinked and its file removed, 2 units enabled.
+	if changed != 6 {
+		t.Errorf("install changed %d, want 6\n%s", changed, out)
+	}
+	if _, statErr := os.Lstat(socketPath); !os.IsNotExist(statErr) {
+		t.Errorf("socket unit still present, statErr=%v", statErr)
+	}
+	if bus.enabled["mwan-opnsense-drain.socket"] {
+		t.Error("socket unit still enabled")
+	}
+
+	out.Reset()
+	changed, err = in.installHost(ctx, openBus)
+	if err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if changed != 0 || out.Len() != 0 {
+		t.Errorf("rerun changed %d, want 0\n%s", changed, out)
+	}
+
+	enableCall := "enable mwan-opnsense-host.service,mwan-opnsense-drain.service runtime=false force=false"
+	wantCalls := []string{
+		"reload",
+		"stop mwan-opnsense-drain.socket mode=replace",
+		"disable mwan-opnsense-drain.socket runtime=false",
+		enableCall, "reload", "close",
+		enableCall, "reload", "close",
+	}
 	if !slices.Equal(bus.calls, wantCalls) {
 		t.Errorf("systemd calls = %q\nwant %q", bus.calls, wantCalls)
 	}
