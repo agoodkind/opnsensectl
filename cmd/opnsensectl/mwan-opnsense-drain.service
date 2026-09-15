@@ -3,14 +3,13 @@ Description=MWAN OPNsense chardev drainer (holds the qemu virtio-serial chardev 
 Documentation=https://github.com/agoodkind/configs
 After=network.target qemu-server.service
 Wants=network.target
-Requires=mwan-opnsense-drain.socket
-After=mwan-opnsense-drain.socket
 
 [Service]
 # All inputs are read from /etc/opnsensectl/config.toml under [opnsense.drain].
-# Override per host by templating that section, not by patching the unit.
+# Override per host by templating that section, not by patching the unit. The
+# drainer binds [opnsense.drain].listen itself, so no socket unit is needed.
 Type=notify
-ExecStart=/usr/local/bin/mwan opnsense host drain
+ExecStart=/usr/local/bin/opnsensectl host drain
 Restart=always
 RestartSec=0
 StandardOutput=journal

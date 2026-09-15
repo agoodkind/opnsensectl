@@ -23,8 +23,8 @@ const (
 	// defaultRCName / defaultRCSubr are the rc.d service name and the
 	// rc.subr path the is-enabled check resolves. Both live on FreeBSD
 	// hosts and have stable conventional paths. The serial path, baud,
-	// config.xml path, backup dir, state dir, and rendered logfile path
-	// are recorded in the daemon-side TOML (/var/lib/mwan/daemon.toml);
+	// config.xml path, backup dir, state dir, and logfile path are
+	// recorded in the daemon-side TOML (/usr/local/etc/opnsensectl.conf);
 	// only rc.d supervision details stay compiled in here.
 	defaultRCName = "mwan_opnsense"
 	defaultRCSubr = "/etc/rc.subr"
@@ -45,9 +45,9 @@ const (
 // so the daemon does not authenticate at the application layer.
 //
 // The serve verb takes no flags. The serial path, baud, config.xml path,
-// backup dir, and transfer state dir come from /var/lib/mwan/daemon.toml
-// (templated by the rc.d script). That file also records the rc.d-owned logfile
-// path so the runtime contract is complete even though the serve process does
+// backup dir, and transfer state dir come from the file daemoncfg.Load reads
+// (/usr/local/etc/opnsensectl.conf, written by opnsensectl install). That file
+// also records the rc.d-owned logfile path even though the serve process does
 // not open the logfile.
 // The verb still accepts an empty arg slice or a help token for forward
 // compatibility.
@@ -57,8 +57,8 @@ func runOPNsenseDaemonServe(args []string) int {
 			fmt.Fprintln(os.Stdout, "usage: mwan opnsense daemon serve")
 			fmt.Fprintln(os.Stdout, "")
 			fmt.Fprintln(os.Stdout, "Run the in-VM dispatcher daemon. No flags; runtime config")
-			fmt.Fprintln(os.Stdout, "is loaded from /var/lib/mwan/daemon.toml (templated by the")
-			fmt.Fprintln(os.Stdout, "rc.d script from rc.conf.d-overridable variables).")
+			fmt.Fprintln(os.Stdout, "is loaded from /usr/local/etc/opnsensectl.conf (written by")
+			fmt.Fprintln(os.Stdout, "opnsensectl install).")
 			return 0
 		}
 	}

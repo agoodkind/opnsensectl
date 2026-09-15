@@ -2,19 +2,12 @@
 #
 # Drop this file in place (without the .sample suffix) and edit to taste.
 # Defaults shown match the rc.d script's fallbacks.
-# These runtime values are rendered into /var/lib/mwan/daemon.toml when
-# the service starts. pidfile and backgrounding stay in the rc.d wrapper.
+# These values cover only the rc.d supervision. The daemon's runtime settings
+# (serial device, baud, config.xml, backup and transfer paths) live in
+# /usr/local/etc/opnsensectl.conf. pidfile and backgrounding stay in the rc.d
+# wrapper.
 
 mwan_opnsense_enable="YES"
-
-# virtio-serial-pci device path. /dev/ttyV0.1 corresponds to the first
-# virtio-serial port attached to the VM via Proxmox -args.
-mwan_opnsense_listen_serial="/dev/ttyV0.1"
-mwan_opnsense_baud="115200"
-
-mwan_opnsense_config_xml="/conf/config.xml"
-mwan_opnsense_backup_dir="/conf/backup"
-mwan_opnsense_state_dir="/var/lib/mwan/transfers"
 
 # Log destination for daemon output. Rotated by newsyslog (see
 # /usr/local/etc/newsyslog.conf.d/mwan-opnsense.conf if you want it

@@ -149,9 +149,10 @@ func runOPNsenseHostDrain(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Fds passed by systemd: the socket-activated relay listener (name
-	// "relay") and, after a restart, the live chardev connection from the fd
-	// store (name "chardev"). The map is empty when not run under systemd.
+	// Fds passed by systemd: after a restart, the live chardev connection from
+	// the fd store (name "chardev"), and the relay listener (name "relay") only
+	// on a host that still carries the retired socket unit. The map is empty
+	// when not run under systemd.
 	byName := activation.FilesWithNames()
 
 	ln, err := acquireListener(ctx, log, byName, listenPath)
@@ -256,10 +257,11 @@ func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openC
 	}
 }
 
-// acquireListener prefers the socket-activated relay listener passed by systemd
-// (fd name "relay") and falls back to binding the path directly when not run
-// under systemd (manual runs and tests). A reclaimed unix listener must not
-// unlink its path on Close, since systemd owns it.
+// acquireListener adopts a relay listener passed by systemd (fd name "relay"),
+// which only a host that still carries the retired mwan-opnsense-drain.socket
+// unit passes, and otherwise binds the path itself. opnsensectl install writes
+// no socket unit, so the installed drain service always binds. A reclaimed unix
+// listener must not unlink its path on Close, since systemd owns it.
 func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]*os.File, listenPath string) (net.Listener, error) {
 	if fs := byName["relay"]; len(fs) > 0 {
 		ln, err := net.FileListener(fs[0])
