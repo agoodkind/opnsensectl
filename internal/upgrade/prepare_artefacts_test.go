@@ -93,7 +93,7 @@ func TestPrepareCapturesAllArtefacts(t *testing.T) {
 func TestPrepareFirmwareCaptureFailureAbortsPrepare(t *testing.T) {
 	t.Parallel()
 	deps, _, s, x, _ := newDeps(t)
-	x.byArgv["opnsense-update -vb"] = GuestExecResult{ExitCode: 1, Stderr: "Must be root.\n"}
+	x.byArgv[guestUpdater+" -vb"] = GuestExecResult{ExitCode: 1, Stderr: "Must be root.\n"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -114,7 +114,7 @@ func TestPrepareFirmwareCaptureFailureAbortsPrepare(t *testing.T) {
 func TestPrepareBGPCaptureFailureWritesReasonStamp(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.byCommand["vtysh"] = GuestExecResult{ExitCode: 1, Stderr: "vtysh: command not found"}
+	x.byCommand[guestVtysh] = GuestExecResult{ExitCode: 1, Stderr: "vtysh: command not found"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -151,8 +151,8 @@ func TestPrepareBGPCaptureExecErrorWritesReasonStamp(t *testing.T) {
 	if x.errByCommand == nil {
 		x.errByCommand = map[string]error{}
 	}
-	x.errByCommand["vtysh"] = errors.New("transport closed")
-	x.byCommand["vtysh"] = GuestExecResult{}
+	x.errByCommand[guestVtysh] = errors.New("transport closed")
+	x.byCommand[guestVtysh] = GuestExecResult{}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -185,7 +185,7 @@ func TestPrepareBGPCaptureExecErrorWritesReasonStamp(t *testing.T) {
 func TestPrepareConfigXMLCaptureFailureAbortsPrepare(t *testing.T) {
 	t.Parallel()
 	deps, _, s, x, _ := newDeps(t)
-	x.byCommand["cat"] = GuestExecResult{ExitCode: 1, Stderr: "cat: /conf/config.xml: No such file"}
+	x.byCommand[guestCat] = GuestExecResult{ExitCode: 1, Stderr: "cat: /conf/config.xml: No such file"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -209,8 +209,8 @@ func TestPrepareConfigXMLExecErrorAbortsPrepare(t *testing.T) {
 	if x.errByCommand == nil {
 		x.errByCommand = map[string]error{}
 	}
-	x.errByCommand["cat"] = errors.New("transport closed")
-	x.byCommand["cat"] = GuestExecResult{}
+	x.errByCommand[guestCat] = errors.New("transport closed")
+	x.byCommand[guestCat] = GuestExecResult{}
 	opts := newOpts(t, "101")
 
 	_, err := Prepare(context.Background(), deps, opts)
@@ -228,7 +228,7 @@ func TestPrepareConfigXMLExecErrorAbortsPrepare(t *testing.T) {
 func TestPrepareInterfacesPartialFailureLandsErrFields(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.byCommand["netstat"] = GuestExecResult{ExitCode: 2, Stderr: "netstat: bad family"}
+	x.byCommand[guestNetstat] = GuestExecResult{ExitCode: 2, Stderr: "netstat: bad family"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -256,7 +256,7 @@ func TestPrepareInterfacesPartialFailureLandsErrFields(t *testing.T) {
 func TestPrepareVersionCaptureFailureWritesEmptyFile(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.byArgv["opnsense-version"] = GuestExecResult{ExitCode: 127, Stderr: "command not found"}
+	x.byArgv[guestVersion] = GuestExecResult{ExitCode: 127, Stderr: "command not found"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
@@ -350,7 +350,7 @@ func TestPrepareWritesMetadataAfterSnapshot(t *testing.T) {
 func TestCaptureBGPStatusEmptyHasReasonStamp(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.byCommand["vtysh"] = GuestExecResult{ExitCode: 127, Stderr: "vtysh: not found"}
+	x.byCommand[guestVtysh] = GuestExecResult{ExitCode: 127, Stderr: "vtysh: not found"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)

@@ -175,7 +175,7 @@ func takeSnapshotAndPersistState(
 // not an error.
 func captureBootEnvironment(ctx context.Context, deps Deps, opts Options, deployDir string, clk Clock) bool {
 	beName := fmt.Sprintf("pre-mwan152-%d", clk.Now().Unix())
-	res, err := deps.Exec.GuestExec(ctx, opts.VMID, "bectl", "create", beName)
+	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestBectl, "create", beName)
 	if err != nil {
 		_ = WriteFileBytes(ctx, filepath.Join(deployDir, "bectl.err"), []byte(err.Error()))
 		return false

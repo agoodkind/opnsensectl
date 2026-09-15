@@ -84,7 +84,7 @@ func captureConfigXML(ctx context.Context, deps Deps, opts Options, deployDir st
 			"err", errCaptureExecMissing)
 		return errCaptureExecMissing
 	}
-	res, err := deps.Exec.GuestExec(ctx, opts.VMID, "cat", "/conf/config.xml")
+	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestCat, "/conf/config.xml")
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade.Prepare: capture config.xml: GuestExec failed",
 			"err", err, "vmid", opts.VMID)
@@ -122,7 +122,7 @@ func captureVersion(ctx context.Context, deps Deps, opts Options, deployDir stri
 		_ = WriteFileBytes(ctx, path, nil)
 		return
 	}
-	res, err := deps.Exec.GuestExec(ctx, opts.VMID, "opnsense-version")
+	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestVersion)
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade.Prepare: capture version: GuestExec failed, writing empty placeholder",
 			"err", err, "vmid", opts.VMID)
@@ -161,9 +161,9 @@ func captureInterfaces(ctx context.Context, deps Deps, opts Options, deployDir s
 		writeInterfacesArtefact(ctx, path, art)
 		return
 	}
-	art.IfconfigAV, art.IfconfigErr = runCaptureCommand(ctx, deps, opts.VMID, "ifconfig", "-av")
-	art.NetstatV4, art.NetstatV4Err = runCaptureCommand(ctx, deps, opts.VMID, "netstat", "-rn", "-f", "inet")
-	art.NetstatV6, art.NetstatV6Err = runCaptureCommand(ctx, deps, opts.VMID, "netstat", "-rn", "-f", "inet6")
+	art.IfconfigAV, art.IfconfigErr = runCaptureCommand(ctx, deps, opts.VMID, guestIfconfig, "-av")
+	art.NetstatV4, art.NetstatV4Err = runCaptureCommand(ctx, deps, opts.VMID, guestNetstat, "-rn", "-f", "inet")
+	art.NetstatV6, art.NetstatV6Err = runCaptureCommand(ctx, deps, opts.VMID, guestNetstat, "-rn", "-f", "inet6")
 	writeInterfacesArtefact(ctx, path, art)
 }
 
@@ -182,7 +182,7 @@ func captureBGPStatus(ctx context.Context, deps Deps, opts Options, deployDir st
 		})
 		return
 	}
-	res, err := deps.Exec.GuestExec(ctx, opts.VMID, "vtysh", "-c", "show bgp summary json")
+	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestVtysh, "-c", "show bgp summary json")
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: GuestExec failed",
 			"err", err, "vmid", opts.VMID)

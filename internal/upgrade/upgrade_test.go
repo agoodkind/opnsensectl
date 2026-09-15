@@ -289,15 +289,15 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 		}
 	}
 	switch command {
-	case "true":
+	case guestTrue:
 		return fwOK("")
 	case fakeBootTimeArgv:
 		return fwOK(bootTimeOutput(f.bootSeconds))
 	case fakeBootIDArgv:
 		return f.readBootID()
-	case "opnsense-version":
+	case guestVersion:
 		return fwOK("OPNsense " + f.coreVersion + " (amd64)\n")
-	case "opnsense-version -n":
+	case guestVersion + " -n":
 		return fwOK(f.corePackage + "\n")
 	case guestPkg + " update":
 		return fwOK(pkgCatalogueOutput)
@@ -314,28 +314,28 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 			return fwOK("1\n")
 		}
 		return fwOK("\n")
-	case "opnsense-update -v":
+	case guestUpdater + " -v":
 		return fwOK(stripPackageRevision(f.updaterVersion) + "\n")
-	case "opnsense-update -vb":
+	case guestUpdater + " -vb":
 		return fwOK(f.baseVersion + "\n")
-	case "opnsense-update -vk":
+	case guestUpdater + " -vk":
 		return fwOK(f.kernelVersion + "\n")
-	case "opnsense-update -bk -c":
+	case guestUpdater + " -bk -c":
 		return f.checkSets()
-	case "opnsense-update -bk":
+	case guestUpdater + " -bk":
 		return f.installSets()
-	case "opnsense-update -p -t " + f.corePackage:
+	case guestUpdater + " -p -t " + f.corePackage:
 		return f.updatePackages()
 	case guestWebGUI:
 		f.mutations = append(f.mutations, command)
 		return fwOK("")
-	case "shutdown -r +0":
+	case guestShutdown + " -r +0":
 		return f.reboot()
 	}
 	if len(args) == 5 && args[0] == guestPkg && args[1] == "version" && args[2] == "-t" {
 		return fwOK(pkgVersionOrder(args[3], args[4]) + "\n")
 	}
-	if len(args) == 4 && args[0] == "opnsense-update" && args[1] == "-u" && args[2] == "-r" {
+	if len(args) == 4 && args[0] == guestUpdater && args[1] == "-u" && args[2] == "-r" {
 		return f.stageRelease(args[3])
 	}
 	return GuestExecResult{ExitCode: 127, Stdout: "", Stderr: args[0] + ": not found\n"},
@@ -519,10 +519,10 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 	x := &fakeExec{
 		byArgv: map[string]GuestExecResult{},
 		byCommand: map[string]GuestExecResult{
-			"cat":      {ExitCode: 0, Stdout: "<config/>"},
-			"ifconfig": {ExitCode: 0, Stdout: "lo0: flags=...\n"},
-			"netstat":  {ExitCode: 0, Stdout: "Routing tables\n"},
-			"vtysh":    {ExitCode: 0, Stdout: "{}\n"},
+			guestCat:      {ExitCode: 0, Stdout: "<config/>"},
+			guestIfconfig: {ExitCode: 0, Stdout: "lo0: flags=...\n"},
+			guestNetstat:  {ExitCode: 0, Stdout: "Routing tables\n"},
+			guestVtysh:    {ExitCode: 0, Stdout: "{}\n"},
 		},
 		errByCommand: map[string]error{},
 		firmware:     productionHotfix(),
@@ -735,7 +735,7 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
 	}
 	for _, argv := range x.argvs() {
-		if argv == "opnsense-update -bk" || argv == "shutdown -r +0" {
+		if argv == guestUpdater+" -bk" || argv == guestShutdown+" -r +0" {
 			t.Fatalf("ran %q after the package update failed", argv)
 		}
 	}

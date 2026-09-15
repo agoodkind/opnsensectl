@@ -207,7 +207,7 @@ func waitForGuest(ctx context.Context, deps Deps, vmid string, deadline time.Dur
 	pollCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	for {
-		res, err := deps.Exec.GuestExec(pollCtx, vmid, "true")
+		res, err := deps.Exec.GuestExec(pollCtx, vmid, guestTrue)
 		if err == nil && res.ExitCode == 0 {
 			return nil
 		}

@@ -26,16 +26,29 @@ const (
 	artefactUpgradeLog = "upgrade.log"
 )
 
-// Guest commands the firmware flow runs. The pkg, pluginctl, and web GUI
-// paths are the ones the OPNsense firmware scripts use
+// Guest commands the upgrade flow runs, each by absolute path. The daemon
+// resolves a bare name with its own PATH, and a daemon started through
+// service(8) gets /sbin:/bin:/usr/sbin:/usr/bin
+// (freebsd-src usr.sbin/service/service.sh:196-198), which lacks the
+// /usr/local directories. The pkg, pluginctl, and web GUI paths are the
+// ones the OPNsense firmware scripts use
 // (opnsense/core src/opnsense/scripts/firmware/config.sh:36 and
-// update.sh:47,57).
+// update.sh:47,57). opnsense-version installs from opnsense/core src/sbin
+// under /usr/local/sbin, and vtysh comes with the FRR package under
+// /usr/local/bin.
 const (
 	guestPkg       = "/usr/local/sbin/pkg"
 	guestPluginctl = "/usr/local/sbin/pluginctl"
 	guestWebGUI    = "/usr/local/etc/rc.restart_webgui"
-	guestUpdater   = "opnsense-update"
-	guestVersion   = "opnsense-version"
+	guestUpdater   = "/usr/local/sbin/opnsense-update"
+	guestVersion   = "/usr/local/sbin/opnsense-version"
+	guestVtysh     = "/usr/local/bin/vtysh"
+	guestCat       = "/bin/cat"
+	guestIfconfig  = "/sbin/ifconfig"
+	guestNetstat   = "/usr/bin/netstat"
+	guestBectl     = "/sbin/bectl"
+	guestShutdown  = "/sbin/shutdown"
+	guestTrue      = "/usr/bin/true"
 	updaterPackage = "opnsense-update"
 	rebootSetting  = "system.firmware.reboot"
 	pkgOlder       = "<"

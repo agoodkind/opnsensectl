@@ -60,7 +60,7 @@ func rebootGuest(ctx context.Context, clk Clock, r *guestRunner, wait rebootWait
 		slog.ErrorContext(ctx, "upgrade.Execute: read boot id before reboot failed", "err", err, "vmid", r.vmid)
 		return fmt.Errorf("read boot id before reboot: %w", err)
 	}
-	_, _ = r.run(ctx, "shutdown", "-r", "+0")
+	_, _ = r.run(ctx, guestShutdown, "-r", "+0")
 	slog.InfoContext(ctx, "upgrade.Execute: reboot issued, waiting for a new boot",
 		"vmid", r.vmid, "boot_id", before)
 	if _, err := waitForReboot(ctx, clk, r.exec, r.vmid, before, wait); err != nil {

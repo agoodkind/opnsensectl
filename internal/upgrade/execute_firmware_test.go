@@ -74,7 +74,7 @@ func TestExecuteAppliesPackageHotfixWithoutReboot(t *testing.T) {
 	if st.Phase != PhaseExecuted {
 		t.Fatalf("phase = %q, want executed", st.Phase)
 	}
-	if !slices.Contains(x.argvs(), "opnsense-update -p -t opnsense") {
+	if !slices.Contains(x.argvs(), guestUpdater+" -p -t opnsense") {
 		t.Fatalf("package update did not run: %v", x.argvs())
 	}
 	if x.firmware.coreVersion != "26.7.3_11" {
@@ -143,10 +143,10 @@ func TestExecuteMajorUpgradeStagesReleaseAndReboots(t *testing.T) {
 	if st.Phase != PhaseExecuted {
 		t.Fatalf("phase = %q, want executed", st.Phase)
 	}
-	if !slices.Contains(x.argvs(), "opnsense-update -u -r 27.1") {
+	if !slices.Contains(x.argvs(), guestUpdater+" -u -r 27.1") {
 		t.Fatalf("major upgrade command did not run: %v", x.argvs())
 	}
-	if slices.Contains(x.argvs(), "opnsense-update -p -t opnsense") {
+	if slices.Contains(x.argvs(), guestUpdater+" -p -t opnsense") {
 		t.Fatalf("major upgrade ran the package update path: %v", x.argvs())
 	}
 	if x.firmware.reboots != 1 || x.firmware.coreVersion != "27.1" {

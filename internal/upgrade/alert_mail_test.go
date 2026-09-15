@@ -123,7 +123,7 @@ func TestUpgradePhasesMailAlertsThroughSendEmail(t *testing.T) {
 		t.Fatalf("NewWithMailer: %v", err)
 	}
 	deps.Notifier = notifier
-	exec.byCommand["true"] = GuestExecResult{ExitCode: 0, Stdout: "", Stderr: ""}
+	exec.byCommand[guestTrue] = GuestExecResult{ExitCode: 0, Stdout: "", Stderr: ""}
 	snap.running = true
 	opts := newOpts(t, "101")
 	opts.DryRunExecute = true

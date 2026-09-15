@@ -37,7 +37,7 @@ func newRebootRunner(x *fakeExec) *guestRunner {
 // shutdown -r +0.
 func bootIDProbesAfterShutdown(x *fakeExec) int {
 	argvs := x.argvs()
-	shutdownAt := slices.Index(argvs, "shutdown -r +0")
+	shutdownAt := slices.Index(argvs, guestShutdown+" -r +0")
 	if shutdownAt < 0 {
 		return 0
 	}
@@ -141,7 +141,7 @@ func TestExecuteDoesNotRebootWhenBootIDCaptureFails(t *testing.T) {
 	if !strings.Contains(err.Error(), "read boot id before reboot") {
 		t.Fatalf("error %q does not name the boot id read", err)
 	}
-	if x.firmware.reboots != 0 || slices.Contains(x.argvs(), "shutdown -r +0") {
+	if x.firmware.reboots != 0 || slices.Contains(x.argvs(), guestShutdown+" -r +0") {
 		t.Fatalf("rebooted without a boot id to compare: %v", x.argvs())
 	}
 }
