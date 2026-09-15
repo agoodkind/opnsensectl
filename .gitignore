@@ -1,0 +1,12 @@
+.make/
+/dist/
+go.work
+go.work.sum
+!.golangci-lint-baseline.txt
+!.gocyclo-baseline.txt
+!.deadcode-baseline.txt
+!.staticcheck-extra-baseline.txt
+!.go-mk-applied-notices
+
+# Added by ggshield
+.cache_ggshield

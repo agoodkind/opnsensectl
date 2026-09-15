@@ -1,0 +1,30 @@
+client /mwan.v1.OpnsenseService/BackupConfigXML
+client /mwan.v1.OpnsenseService/DeployStatus
+client /mwan.v1.OpnsenseService/Exec
+client /mwan.v1.OpnsenseService/InjectGatewayV6
+client /mwan.v1.OpnsenseService/RestartDaemon
+client /mwan.v1.OpnsenseService/Revert
+client /mwan.v1.OpnsenseService/StageBinary
+client /mwan.v1.OpnsenseService/StripGatewayV6
+client /mwan.v1.OpnsenseService/Version
+client /mwan.v1.OpnsenseService/XPathDelete
+client /mwan.v1.OpnsenseService/XPathGet
+client /mwan.v1.OpnsenseService/XPathSet
+client /mwan.v1.TransferService/Cancel
+client /mwan.v1.TransferService/Status
+client /mwan.v1.TransferService/Upload
+server /mwan.v1.OpnsenseService/BackupConfigXML unary
+server /mwan.v1.OpnsenseService/DeployStatus unary
+server /mwan.v1.OpnsenseService/Exec client_streams=true server_streams=true
+server /mwan.v1.OpnsenseService/InjectGatewayV6 unary
+server /mwan.v1.OpnsenseService/RestartDaemon unary
+server /mwan.v1.OpnsenseService/Revert unary
+server /mwan.v1.OpnsenseService/StageBinary unary
+server /mwan.v1.OpnsenseService/StripGatewayV6 unary
+server /mwan.v1.OpnsenseService/Version unary
+server /mwan.v1.OpnsenseService/XPathDelete unary
+server /mwan.v1.OpnsenseService/XPathGet client_streams=false server_streams=true
+server /mwan.v1.OpnsenseService/XPathSet unary
+server /mwan.v1.TransferService/Cancel unary
+server /mwan.v1.TransferService/Status unary
+server /mwan.v1.TransferService/Upload client_streams=true server_streams=true

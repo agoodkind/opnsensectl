@@ -1,0 +1,39 @@
+[Unit]
+Description=MWAN OPNsense host bridge (yamux over qemu virtio-serial)
+Documentation=https://github.com/agoodkind/configs
+After=network.target qemu-server.service
+Wants=network.target
+# The bridge dials the drainer's relay socket, not the qemu chardev directly,
+# so the drainer holds the chardev open across bridge restarts. See
+# docs/ops/opnsense/wedge.md.
+After=mwan-opnsense-drain.service
+Wants=mwan-opnsense-drain.service
+
+[Service]
+Type=simple
+# All inputs are read from /etc/opnsensectl/config.toml under [opnsense.host].
+# Override per host by templating that section, not by patching the unit.
+ExecStart=/usr/local/bin/mwan opnsense host serve
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mwan-opnsense-host
+
+# The bridge needs:
+#   - read+write access to the qemu chardev unix socket under
+#     /var/run/qemu-server/, owned by root (Proxmox-managed).
+#   - read+write access to its own listen socket under /var/run/.
+#   - read access to /etc/opnsensectl/config.toml.
+# No network capabilities: it only talks to local unix sockets.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+PrivateTmp=true
+ReadWritePaths=/var/run /run
+
+[Install]
+WantedBy=multi-user.target
