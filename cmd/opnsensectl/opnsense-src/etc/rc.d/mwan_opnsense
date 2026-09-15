@@ -115,6 +115,12 @@ mwan_opnsense_start() {
 	mwan_opnsense_write_daemon_toml || return 1
 
 	rm -f "${pidfile}" "${child_pidfile}"
+	# service(8) runs this script with PATH=/sbin:/bin:/usr/sbin:/usr/bin, while
+	# the boot start also carries /usr/local/bin and /usr/local/sbin. Setting the
+	# boot PATH here gives the daemon, and every command it runs by bare name,
+	# the same environment on every start path.
+	PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin"
+	export PATH
 	# daemon(8) supervises and restarts the child on an unsolicited exit
 	# (-r), records the supervisor pid (-P) and the child pid (-p) so a
 	# forced stop can signal the actual daemon, and redirects stdout/stderr

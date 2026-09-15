@@ -114,6 +114,82 @@ func TestRCDWritesDaemonTOML(t *testing.T) {
 	}
 }
 
+// rcdBootPath is the PATH a boot start gives the daemon. rcdServicePath is the
+// PATH service(8) runs an rc.d script with, which lacks the /usr/local
+// directories.
+const (
+	rcdBootPath    = "/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin"
+	rcdServicePath = "/sbin:/bin:/usr/sbin:/usr/bin"
+)
+
+// TestRCDStartGivesDaemonTheBootPath runs the real start function the way
+// service(8) runs it, with an emptied environment and the short PATH, and
+// asserts that daemon(8) is launched with the boot PATH. A stub stands in for
+// daemon(8): it records the PATH it inherited and writes the calling shell's pid
+// as the supervisor pidfile, so the start's status poll finds a live process.
+func TestRCDStartGivesDaemonTheBootPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	scriptPath, rcSubrPath := renderRCDScript(t, dir)
+
+	pathLog := filepath.Join(dir, "daemon-path.log")
+	daemonStub := filepath.Join(dir, "daemon")
+	stubText := strings.Join([]string{
+		"#!/bin/sh",
+		`printf '%s\n' "${PATH}" > "` + pathLog + `"`,
+		`printf '%s' "${PPID}" > "$3"`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(daemonStub, []byte(stubText), 0o700); err != nil {
+		t.Fatalf("write daemon stub: %v", err)
+	}
+
+	scriptData, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read rendered rc.d script: %v", err)
+	}
+	rendered := string(scriptData)
+	stubbed := strings.Replace(rendered, "/usr/sbin/daemon -r ", daemonStub+" -r ", 1)
+	if stubbed == rendered {
+		t.Fatal("rc.d script does not launch /usr/sbin/daemon -r")
+	}
+	if err := os.WriteFile(scriptPath, []byte(stubbed), 0o700); err != nil {
+		t.Fatalf("write stubbed rc.d script: %v", err)
+	}
+
+	commandText := strings.Join([]string{
+		"set -u",
+		`. "${SCRIPT_PATH}"`,
+		`daemon_toml_dir="${DAEMON_TOML_DIR}"`,
+		`daemon_toml_path="${DAEMON_TOML_DIR}/daemon.toml"`,
+		`pidfile="${PIDFILE}"`,
+		`child_pidfile="${PIDFILE}.child"`,
+		`mwan_opnsense_start`,
+	}, "\n")
+
+	command := exec.CommandContext(t.Context(), "/bin/sh", "-c", commandText)
+	command.Env = []string{
+		"HOME=/",
+		"PATH=" + rcdServicePath,
+		"RC_SUBR_STUB=" + rcSubrPath,
+		"SCRIPT_PATH=" + scriptPath,
+		"DAEMON_TOML_DIR=" + filepath.Join(dir, "var-lib-mwan"),
+		"PIDFILE=" + filepath.Join(dir, "mwan_opnsense.pid"),
+	}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run start: %v\n%s", err, output)
+	}
+
+	pathData, err := os.ReadFile(pathLog)
+	if err != nil {
+		t.Fatalf("daemon stub recorded no PATH: %v\nstart output:\n%s", err, output)
+	}
+	if got := strings.TrimSuffix(string(pathData), "\n"); got != rcdBootPath {
+		t.Fatalf("daemon(8) PATH = %q, want the boot PATH %q", got, rcdBootPath)
+	}
+}
+
 // TestRCDStopKillsWedgedChild drives mwan_opnsense_stop against a stub
 // kill that keeps the supervisor "alive" through SIGTERM (the wedge), and
 // asserts the forced path signals the tracked child pid directly and the
