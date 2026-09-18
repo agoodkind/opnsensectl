@@ -21,8 +21,9 @@ import (
 type Phase string
 
 // Phase values enumerate every documented state in the upgrade
-// lifecycle. PhaseEmpty is the zero value; PhaseCommitted and
-// PhaseRollbackFailed are terminal.
+// lifecycle. PhaseEmpty is the zero value. PhaseCommitted ends a cycle
+// and a fresh prepare is the only move out of it. PhaseRollbackFailed
+// is terminal.
 const (
 	// PhaseEmpty is the zero value indicating no upgrade in flight.
 	PhaseEmpty Phase = ""

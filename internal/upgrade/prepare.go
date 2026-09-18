@@ -58,8 +58,11 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		slog.ErrorContext(ctx, "upgrade.Prepare: load state", "err", err, "vmid", opts.VMID)
 		return emptyState(), err
 	}
-	if cur.Phase != PhaseEmpty && cur.Phase != PhasePrepared {
-		err := TransitionNotAllowedError{From: cur.Phase, To: PhasePrepared}
+	// allowedTransitions decides which phases can open a cycle. A
+	// committed cycle is finished and its snapshot is already released,
+	// so the next prepare starts from it and overwrites every field
+	// below. A rollback_failed cycle still refuses.
+	if err := EnforceTransition(cur.Phase, PhasePrepared); err != nil {
 		slog.ErrorContext(ctx, "upgrade.Prepare: refusing transition",
 			"err", err, "from", cur.Phase, "to", PhasePrepared)
 		return cur, err
