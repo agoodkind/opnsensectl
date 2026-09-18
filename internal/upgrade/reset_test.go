@@ -37,14 +37,21 @@ func newResetFixture(t *testing.T, listing string) *resetFixture {
 	}
 }
 
+// writeState records an interrupted cycle, the phase most reset tests
+// start from.
 func (f *resetFixture) writeState(t *testing.T, snapshot string, deployID string) {
+	t.Helper()
+	f.writeStateInPhase(t, snapshot, deployID, PhaseExecuteFailed)
+}
+
+func (f *resetFixture) writeStateInPhase(t *testing.T, snapshot, deployID string, phase Phase) {
 	t.Helper()
 	st := State{
 		VMID:         f.vmid,
 		DeployID:     deployID,
 		Target:       "26.7",
 		Snapshot:     snapshot,
-		Phase:        PhaseExecuteFailed,
+		Phase:        phase,
 		UpdatedAt:    time.Unix(1_700_000_000, 0),
 		FailingCheck: nil,
 	}
@@ -250,6 +257,10 @@ func TestResetNothingToDoOnCleanState(t *testing.T) {
 	}
 }
 
+// TestResetRefusesWhenBaselineMissingOnVM keeps the refusal that still
+// matters. An unfinished cycle names a baseline the VM does not hold,
+// so a snapshot vanished under an interrupted upgrade and an operator
+// reads the state file before anything is touched.
 func TestResetRefusesWhenBaselineMissingOnVM(t *testing.T) {
 	t.Parallel()
 	// state.json claims baseline foo, but the VM has only bar.
@@ -266,5 +277,89 @@ func TestResetRefusesWhenBaselineMissingOnVM(t *testing.T) {
 	}
 	if len(f.snap.deletes) != 0 {
 		t.Fatalf("Reset deleted snapshots despite missing baseline: %v", f.snap.deletes)
+	}
+	if len(f.snap.rollbacks) != 0 {
+		t.Fatalf("Reset rolled back despite missing baseline: %v", f.snap.rollbacks)
+	}
+}
+
+// TestResetOnCommittedCycleDoesNotRollBack covers the destructive case.
+// A committed cycle is a validated, finished upgrade. Its baseline is
+// released, so reset sweeps it like any other orphan. Rolling the guest
+// onto it would undo the upgrade, and Rollback refuses that same move
+// from PhaseCommitted.
+func TestResetOnCommittedCycleDoesNotRollBack(t *testing.T) {
+	t.Parallel()
+	baseline := "pre-upgrade-26x-1700000000"
+	orphan := "pre-upgrade-26x-1700000999"
+	// The operator committed with the snapshot kept, so the VM still
+	// holds the baseline.
+	f := newResetFixture(t, listingWith(baseline, orphan))
+	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
+
+	plan, err := Reset(context.Background(), f.deps, ResetOptions{
+		VMID:     f.vmid,
+		StateDir: f.stateDir,
+		DeployID: "",
+	})
+	if err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if plan.RollbackTarget != "" {
+		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
+	}
+	wantDeletes := []string{baseline, orphan}
+	sort.Strings(wantDeletes)
+	if !reflect.DeepEqual(plan.SnapshotsToDelete, wantDeletes) {
+		t.Fatalf("plan.SnapshotsToDelete = %v, want %v", plan.SnapshotsToDelete, wantDeletes)
+	}
+
+	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
+		t.Fatalf("ResetExecute: %v", err)
+	}
+	if len(f.snap.rollbacks) != 0 {
+		t.Fatalf("reset rolled a committed upgrade back: %v", f.snap.rollbacks)
+	}
+	if _, err := os.Stat(plan.StatePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("state.json should have been removed: stat err = %v", err)
+	}
+}
+
+// TestResetOnCommittedCycleWithReleasedBaseline covers the state the
+// production router reached. Commit deleted the baseline it recorded,
+// so its absence is the expected result rather than a reason to refuse.
+func TestResetOnCommittedCycleWithReleasedBaseline(t *testing.T) {
+	t.Parallel()
+	baseline := "pre-upgrade-26x-1700000000"
+	// The VM holds no snapshots, because commit deleted this one.
+	f := newResetFixture(t, listingWith())
+	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
+
+	plan, err := Reset(context.Background(), f.deps, ResetOptions{
+		VMID:     f.vmid,
+		StateDir: f.stateDir,
+		DeployID: "",
+	})
+	if err != nil {
+		t.Fatalf("Reset: want no error when commit released the baseline, got %v", err)
+	}
+	if plan.RollbackTarget != "" {
+		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
+	}
+	if len(plan.SnapshotsToDelete) != 0 {
+		t.Fatalf("plan.SnapshotsToDelete = %v, want none", plan.SnapshotsToDelete)
+	}
+
+	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
+		t.Fatalf("ResetExecute: %v", err)
+	}
+	if len(f.snap.rollbacks) != 0 {
+		t.Fatalf("reset rolled back with no baseline on the vm: %v", f.snap.rollbacks)
+	}
+	if len(f.snap.deletes) != 0 {
+		t.Fatalf("reset deleted snapshots the vm does not hold: %v", f.snap.deletes)
+	}
+	if _, err := os.Stat(plan.StatePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("state.json should have been removed: stat err = %v", err)
 	}
 }
