@@ -38,8 +38,9 @@ type Plan struct {
 	// has a target.
 	SnapshotsToDelete []string
 	// RollbackTarget is the recorded baseline snapshot name from
-	// state.json. Empty when state.json is missing or carries no
-	// snapshot, in which case ResetExecute skips the rollback step.
+	// state.json. Empty when state.json is missing, carries no
+	// snapshot, or records a committed cycle, in which case
+	// ResetExecute skips the rollback step.
 	RollbackTarget string
 	// StatePath is the absolute path to the state.json file that reset
 	// will remove. Empty when no state file exists.
@@ -56,9 +57,11 @@ type Plan struct {
 // via the Snapshotter, and validates that the recorded baseline still
 // exists on the VM. The constraints encoded here match the operator-
 // facing contract: on a clean VM with no state and no snapshots the
-// returned Plan has NothingToDo=true; if state.json names a baseline absent
-// from the VM, Reset returns an error and the operator must investigate
-// manually.
+// returned Plan has NothingToDo=true; if an unfinished cycle names a
+// baseline absent from the VM, Reset returns an error and the operator
+// must investigate manually. A committed cycle names no rollback
+// target, so its released baseline is swept like any other orphan and
+// its absence is the expected result of commit.
 func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 	if opts.VMID == "" {
 		err := errors.New("upgrade.Reset: VMID is required")
@@ -106,8 +109,12 @@ func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 		}
 	}
 
+	// A committed cycle has no rollback pending. Commit released the
+	// baseline snapshot it recorded, so reset must not roll the guest
+	// back onto it and must not refuse when it is already gone.
+	// [rollbackAllowedFrom] refuses the same move from PhaseCommitted.
 	rollbackTarget := ""
-	if stateExists && st.Snapshot != "" {
+	if stateExists && st.Snapshot != "" && st.Phase != PhaseCommitted {
 		rollbackTarget = st.Snapshot
 		if !slices.Contains(names, rollbackTarget) {
 			err := fmt.Errorf("upgrade.Reset: recorded baseline snapshot %q not present on vm %s; refusing to delete anything, investigate manually",
