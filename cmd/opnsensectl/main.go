@@ -13,10 +13,14 @@ import (
 )
 
 func main() {
-	// When invoked via the in-VM symlink (mwan-opnsense or
-	// mwan-opnsense.<sha>), the binary fast-paths directly into the
-	// daemon serve loop so rc.d can keep its existing ExecStart.
-	if invokedAsOPNsenseDaemon(os.Args[0]) {
+	// Under a router daemon name (mwan-opnsense or mwan-opnsense.<suffix>),
+	// the binary runs the daemon serve loop, because the run shim that rc.d
+	// supervises execs /usr/local/sbin/mwan-opnsense with no arguments. A
+	// first argument of exactly install is the one exception: it falls
+	// through to the normal install verb, because the router has the binary
+	// only under the daemon names, so the deploy runs `mwan-opnsense install`
+	// to write the startup files. No startup path passes install.
+	if invokedAsOPNsenseDaemon(os.Args[0]) && !requestsInstall(os.Args[1:]) {
 		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
@@ -36,4 +40,8 @@ func main() {
 func invokedAsOPNsenseDaemon(argv0 string) bool {
 	binaryName := filepath.Base(argv0)
 	return binaryName == "mwan-opnsense" || strings.HasPrefix(binaryName, "mwan-opnsense.")
+}
+
+func requestsInstall(args []string) bool {
+	return len(args) > 0 && opnsenseVerb(args[0]) == opnsenseVerbInstall
 }
