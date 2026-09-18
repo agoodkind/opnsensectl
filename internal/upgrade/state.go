@@ -131,9 +131,11 @@ func saveStateCtx(ctx context.Context, stateDir string, st State, now time.Time)
 // allowedTransitions encodes the state machine documented in design
 // section 5. Each entry maps a source phase to the set of phases that
 // are reachable from it. PhaseEmpty is the initial state and only
-// transitions to PhasePrepared. PhaseCommitted and PhaseRollbackFailed
-// are terminal: no further transitions, only a fresh prepare from
-// PhaseEmpty after the operator clears the state file.
+// transitions to PhasePrepared. PhaseCommitted ends one upgrade cycle
+// and starts the next: a fresh prepare is its only outgoing edge, and
+// that prepare replaces every field of the state file. PhaseRollbackFailed
+// is terminal, so an interrupted upgrade waits for an operator to
+// investigate and clear the state file by hand.
 var allowedTransitions = map[Phase]map[Phase]struct{}{
 	PhaseEmpty: {
 		PhasePrepared: {},
@@ -177,6 +179,9 @@ var allowedTransitions = map[Phase]map[Phase]struct{}{
 	},
 	PhaseRolledBack: {
 		PhaseCommitted: {},
+	},
+	PhaseCommitted: {
+		PhasePrepared: {},
 	},
 }
 
