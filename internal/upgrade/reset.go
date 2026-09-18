@@ -33,9 +33,10 @@ type Plan struct {
 	// file was found and no deploy directory was discoverable.
 	DeployID string
 	// SnapshotsToDelete is the list of pre-upgrade-* snapshots that
-	// reset will pass to VMDelSnapshot. The recorded baseline snapshot
-	// (RollbackTarget) is intentionally excluded so the rollback step
-	// has a target.
+	// reset will pass to VMDelSnapshot. RollbackTarget is excluded so
+	// the rollback step has a target. A committed cycle names no
+	// rollback target, so a released baseline the VM still holds is
+	// listed here with the orphans.
 	SnapshotsToDelete []string
 	// RollbackTarget is the recorded baseline snapshot name from
 	// state.json. Empty when state.json is missing, carries no
@@ -109,10 +110,14 @@ func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 		}
 	}
 
-	// A committed cycle has no rollback pending. Commit released the
-	// baseline snapshot it recorded, so reset must not roll the guest
-	// back onto it and must not refuse when it is already gone.
-	// [rollbackAllowedFrom] refuses the same move from PhaseCommitted.
+	// Reset abandons an in-flight cycle and returns the guest to its
+	// baseline. A committed cycle is finished rather than in flight,
+	// so its baseline is released rather than pending. Reset must not
+	// roll the guest back onto that baseline, and must not refuse when
+	// commit already deleted it.
+	//
+	// This condition covers PhaseCommitted only. On PhaseValidatedPass
+	// reset still plans a rollback that [rollbackAllowedFrom] refuses.
 	rollbackTarget := ""
 	if stateExists && st.Snapshot != "" && st.Phase != PhaseCommitted {
 		rollbackTarget = st.Snapshot
