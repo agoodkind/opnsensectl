@@ -44,11 +44,13 @@ type Plan struct {
 	// ResetExecute skips the rollback step.
 	RollbackTarget string
 	// StatePath is the absolute path to the state.json file that reset
-	// will remove. Empty when no state file exists.
+	// will remove. Empty when no state file exists. A plan with
+	// NothingToDo=true leaves the file in place.
 	StatePath string
-	// NothingToDo is true when reset has no work: no state file and no
-	// orphan upgrade snapshots. The CLI prints a friendly message and
-	// exits 0 without prompting for --confirm in this case.
+	// NothingToDo is true when reset has no work: no upgrade snapshots
+	// to delete, no rollback target, and either no state file or one
+	// that records a committed cycle. The CLI prints a friendly message
+	// and exits 0 without prompting for --confirm in this case.
 	NothingToDo bool
 }
 
@@ -62,7 +64,8 @@ type Plan struct {
 // baseline absent from the VM, Reset returns an error and the operator
 // must investigate manually. A committed cycle names no rollback
 // target, so its released baseline is swept like any other orphan and
-// its absence is the expected result of commit.
+// its absence is the expected result of commit. A committed cycle whose
+// VM holds no upgrade snapshot returns NothingToDo=true.
 func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 	if opts.VMID == "" {
 		err := errors.New("upgrade.Reset: VMID is required")
@@ -150,7 +153,13 @@ func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 	if stateExists {
 		plan.StatePath = statePath
 	}
-	plan.NothingToDo = !stateExists && len(toDelete) == 0 && rollbackTarget == ""
+	noSnapshotWork := len(toDelete) == 0 && rollbackTarget == ""
+	// A committed state file blocks nothing, because allowedTransitions
+	// gives PhaseCommitted an edge to PhasePrepared and the next prepare
+	// overwrites every field. Reset therefore leaves it in place when the
+	// VM holds no upgrade snapshot to sweep.
+	stateBlocksNothing := !stateExists || st.Phase == PhaseCommitted
+	plan.NothingToDo = noSnapshotWork && stateBlocksNothing
 	return plan, nil
 }
 

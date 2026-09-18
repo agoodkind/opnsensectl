@@ -327,7 +327,9 @@ func TestResetOnCommittedCycleDoesNotRollBack(t *testing.T) {
 
 // TestResetOnCommittedCycleWithReleasedBaseline covers the state the
 // production router reached. Commit deleted the baseline it recorded,
-// so its absence is the expected result rather than a reason to refuse.
+// so its absence is the expected result rather than a reason to refuse,
+// and reset has nothing to do. The committed state file stays, because
+// the next prepare accepts it.
 func TestResetOnCommittedCycleWithReleasedBaseline(t *testing.T) {
 	t.Parallel()
 	baseline := "pre-upgrade-26x-1700000000"
@@ -349,6 +351,9 @@ func TestResetOnCommittedCycleWithReleasedBaseline(t *testing.T) {
 	if len(plan.SnapshotsToDelete) != 0 {
 		t.Fatalf("plan.SnapshotsToDelete = %v, want none", plan.SnapshotsToDelete)
 	}
+	if !plan.NothingToDo {
+		t.Fatalf("plan.NothingToDo = false, want true on a committed cycle with no snapshots: %+v", plan)
+	}
 
 	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
 		t.Fatalf("ResetExecute: %v", err)
@@ -359,7 +364,45 @@ func TestResetOnCommittedCycleWithReleasedBaseline(t *testing.T) {
 	if len(f.snap.deletes) != 0 {
 		t.Fatalf("reset deleted snapshots the vm does not hold: %v", f.snap.deletes)
 	}
-	if _, err := os.Stat(plan.StatePath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("state.json should have been removed: stat err = %v", err)
+	statePath := filepath.Join(f.stateDir, f.vmid, "state.json")
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("state.json should stay after a no-op reset: %v", err)
+	}
+	if _, err := Prepare(context.Background(), f.deps, Options{
+		VMID:                f.vmid,
+		Target:              "26.7",
+		StateDir:            f.stateDir,
+		UpgradeTimeout:      5 * time.Second,
+		PostRollbackTimeout: 1 * time.Second,
+	}); err != nil {
+		t.Fatalf("Prepare after a no-op reset: %v", err)
+	}
+}
+
+// TestResetOnCommittedCycleWithKeptBaseline covers a commit that kept
+// its baseline. The VM still holds an upgrade snapshot, so reset plans
+// its deletion and is not a no-op.
+func TestResetOnCommittedCycleWithKeptBaseline(t *testing.T) {
+	t.Parallel()
+	baseline := "pre-upgrade-26x-1700000000"
+	f := newResetFixture(t, listingWith(baseline))
+	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
+
+	plan, err := Reset(context.Background(), f.deps, ResetOptions{
+		VMID:     f.vmid,
+		StateDir: f.stateDir,
+		DeployID: "",
+	})
+	if err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if plan.NothingToDo {
+		t.Fatalf("plan.NothingToDo = true, want false while the vm holds %q: %+v", baseline, plan)
+	}
+	if !reflect.DeepEqual(plan.SnapshotsToDelete, []string{baseline}) {
+		t.Fatalf("plan.SnapshotsToDelete = %v, want [%q]", plan.SnapshotsToDelete, baseline)
+	}
+	if plan.RollbackTarget != "" {
+		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
 	}
 }
