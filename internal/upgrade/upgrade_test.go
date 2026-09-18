@@ -578,7 +578,8 @@ func TestCanTransitionAllowsDocumentedEdges(t *testing.T) {
 		{PhaseValidatedFail, PhaseRolledBack, true},
 		{PhaseRolledBack, PhaseCommitted, true},
 		{PhaseValidatedPass, PhaseRolledBack, false},
-		{PhaseCommitted, PhasePrepared, false},
+		{PhaseCommitted, PhasePrepared, true},
+		{PhaseRollbackFailed, PhasePrepared, false},
 		{PhaseRollbackFailed, PhaseRolledBack, false},
 	}
 	for _, tc := range cases {
@@ -591,12 +592,12 @@ func TestCanTransitionAllowsDocumentedEdges(t *testing.T) {
 
 func TestEnforceTransitionReturnsTypedError(t *testing.T) {
 	t.Parallel()
-	err := EnforceTransition(PhaseCommitted, PhasePrepared)
+	err := EnforceTransition(PhaseRollbackFailed, PhasePrepared)
 	var typed TransitionNotAllowedError
 	if !errors.As(err, &typed) {
 		t.Fatalf("expected TransitionNotAllowedError, got %v", err)
 	}
-	if typed.From != PhaseCommitted || typed.To != PhasePrepared {
+	if typed.From != PhaseRollbackFailed || typed.To != PhasePrepared {
 		t.Fatalf("error fields = %+v", typed)
 	}
 }
@@ -972,6 +973,109 @@ func TestCommitIdempotent(t *testing.T) {
 	}
 	if st.Phase != PhaseCommitted {
 		t.Fatalf("phase = %q", st.Phase)
+	}
+}
+
+// runOneUpgradeCycle drives prepare, execute, validate, and commit
+// against one state directory and returns the committed state.
+func runOneUpgradeCycle(t *testing.T, deps Deps, opts Options) State {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := Prepare(ctx, deps, opts); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if _, err := Execute(ctx, deps, opts); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if _, _, err := Validate(ctx, deps, opts); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	st, err := Commit(ctx, deps, opts)
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if st.Phase != PhaseCommitted {
+		t.Fatalf("phase = %q, want %q", st.Phase, PhaseCommitted)
+	}
+	return st
+}
+
+// TestSecondUpgradeFollowsACommittedCycle runs two upgrades back to
+// back against one state directory. Nothing edits state.json between
+// them. Commit deletes the baseline snapshot it recorded, so the second
+// cycle starts from a committed state naming a snapshot the VM no
+// longer holds.
+func TestSecondUpgradeFollowsACommittedCycle(t *testing.T) {
+	t.Parallel()
+	deps, _, snap, guest, _ := newDeps(t)
+	opts := newOpts(t, "101")
+
+	first := runOneUpgradeCycle(t, deps, opts)
+
+	// The router now runs the hotfix the first cycle installed, and the
+	// repository offers the next one.
+	guest.firmware.coreAvailable = "26.7.3_12"
+	deps.Clock = fixedClock{t: time.Unix(1_700_100_000, 0)}
+
+	second := runOneUpgradeCycle(t, deps, opts)
+
+	if first.Snapshot == second.Snapshot {
+		t.Fatalf("both cycles recorded snapshot %q, want a distinct baseline each", first.Snapshot)
+	}
+	if first.DeployID == second.DeployID {
+		t.Fatalf("both cycles recorded deploy id %q, want a distinct deploy each", first.DeployID)
+	}
+	if guest.firmware.coreVersion != "26.7.3_12" {
+		t.Fatalf("core version = %q, want the second upgrade applied", guest.firmware.coreVersion)
+	}
+	if len(snap.snapshots) != 2 {
+		t.Fatalf("snapshot calls = %d, want one baseline per cycle", len(snap.snapshots))
+	}
+}
+
+// TestPrepareAfterRollbackFailedRefuses keeps the refusal that still
+// matters. A rollback that did not restore a healthy guest is an
+// interrupted cycle, so the next prepare must stop and leave the state
+// file for an operator to read.
+func TestPrepareAfterRollbackFailedRefuses(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	deps, _, snap, _, validator := newDeps(t)
+	validator.result = AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: false}})
+	snap.rollbackErr = errors.New("rollback exploded")
+	opts := newOpts(t, "101")
+
+	if _, err := Prepare(ctx, deps, opts); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if _, err := Execute(ctx, deps, opts); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if _, _, err := Validate(ctx, deps, opts); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	rolled, err := Rollback(ctx, deps, opts)
+	if err == nil {
+		t.Fatalf("Rollback: want error from the failed rollback, got nil")
+	}
+	if rolled.Phase != PhaseRollbackFailed {
+		t.Fatalf("phase = %q, want %q", rolled.Phase, PhaseRollbackFailed)
+	}
+
+	st, err := Prepare(ctx, deps, opts)
+	var typed TransitionNotAllowedError
+	if !errors.As(err, &typed) {
+		t.Fatalf("Prepare after rollback_failed = %v, want TransitionNotAllowedError", err)
+	}
+	if typed.From != PhaseRollbackFailed || typed.To != PhasePrepared {
+		t.Fatalf("error fields = %+v", typed)
+	}
+	if st.Phase != PhaseRollbackFailed {
+		t.Fatalf("refused prepare returned phase %q, want the state left at %q",
+			st.Phase, PhaseRollbackFailed)
+	}
+	if len(snap.snapshots) != 1 {
+		t.Fatalf("snapshot calls = %d, want the refused prepare to take none", len(snap.snapshots))
 	}
 }
 
