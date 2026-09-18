@@ -27,9 +27,10 @@ type GCResult struct {
 //
 // GC loads state.json to discover the active deploy snapshot and
 // protects it regardless of age. A deploy is considered active when
-// its Phase is not PhaseCommitted and not PhaseRollbackFailed, because
-// those are the only two terminal states where the snapshot is no
-// longer needed for rollback.
+// its Phase is not PhaseCommitted and not PhaseRollbackFailed. Neither
+// of those phases leaves a rollback pending: commit releases the
+// baseline snapshot, and a failed rollback has already run and waits
+// for an operator.
 //
 // When opts.DryRunGC is true, GC logs and records what it would delete
 // without calling VMDelSnapshot.
