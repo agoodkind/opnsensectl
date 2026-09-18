@@ -268,11 +268,12 @@ func stopService(t *testing.T, command *exec.Cmd) int {
 }
 
 // TestHostServeWithValidConfigServesTheProbeSocket starts the bridge from a
-// complete [opnsense.host] and waits for its probe socket.
+// complete [opnsense.host], with a stale file left at the probe socket path,
+// and waits for the bridge to replace it with a root-only socket.
 func TestHostServeWithValidConfigServesTheProbeSocket(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	listen := filepath.Join(dir, "bridge.sock")
+	listen := writeTestFile(t, dir, "bridge.sock", "stale")
 	configPath := writeTestFile(t, dir, "config.toml", strings.Join([]string{
 		"[opnsense.host]",
 		`upstream = "unix://` + filepath.Join(dir, "drain.sock") + `"`,
@@ -289,7 +290,7 @@ func TestHostServeWithValidConfigServesTheProbeSocket(t *testing.T) {
 	}
 	waitFor(t, "the probe socket "+listen, func() bool {
 		info, err := os.Stat(listen)
-		return err == nil && info.Mode()&os.ModeSocket != 0
+		return err == nil && info.Mode()&os.ModeSocket != 0 && info.Mode().Perm() == socketFileMode
 	})
 	if exitCode := stopService(t, command); exitCode != 0 {
 		t.Errorf("exit code after SIGTERM = %d, want 0; stderr:\n%s", exitCode, stderr.String())

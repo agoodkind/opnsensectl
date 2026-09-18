@@ -289,9 +289,9 @@ func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]
 		log.InfoContext(ctx, "opnsense drain: adopted socket-activated relay listener")
 		return ln, nil
 	}
-	if err := os.Remove(listenPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeStaleSocket(listenPath); err != nil {
 		log.ErrorContext(ctx, "opnsense drain: clear stale relay socket", "path", listenPath, "err", err)
-		return nil, fmt.Errorf("clear stale relay socket %s: %w", listenPath, err)
+		return nil, fmt.Errorf("clear stale relay socket: %w", err)
 	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "unix", listenPath)
@@ -299,10 +299,10 @@ func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]
 		log.ErrorContext(ctx, "opnsense drain: bind relay listener", "path", listenPath, "err", err)
 		return nil, fmt.Errorf("listen %s: %w", listenPath, err)
 	}
-	if err := os.Chmod(listenPath, 0o600); err != nil {
+	if err := restrictSocket(listenPath); err != nil {
 		_ = ln.Close()
 		log.ErrorContext(ctx, "opnsense drain: chmod relay listener", "path", listenPath, "err", err)
-		return nil, fmt.Errorf("chmod %s: %w", listenPath, err)
+		return nil, fmt.Errorf("restrict relay listener: %w", err)
 	}
 	log.InfoContext(ctx, "opnsense drain: bound relay listener", "path", listenPath)
 	return ln, nil

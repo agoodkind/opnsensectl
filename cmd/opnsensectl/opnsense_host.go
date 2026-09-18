@@ -107,17 +107,17 @@ func runOPNsenseHostServe(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := os.Remove(listen); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return printAndExit("host serve", fmt.Errorf("clear stale socket: %w", err))
+	if err := removeStaleSocket(listen); err != nil {
+		return printAndExit("host serve", err)
 	}
 	var lc net.ListenConfig
 	listener, err := lc.Listen(ctx, "unix", listen)
 	if err != nil {
 		return printAndExit("host serve", fmt.Errorf("listen %s: %w", listen, err))
 	}
-	if err := os.Chmod(listen, 0o600); err != nil {
+	if err := restrictSocket(listen); err != nil {
 		_ = listener.Close()
-		return printAndExit("host serve", fmt.Errorf("chmod %s: %w", listen, err))
+		return printAndExit("host serve", err)
 	}
 	defer func() { _ = listener.Close() }()
 
