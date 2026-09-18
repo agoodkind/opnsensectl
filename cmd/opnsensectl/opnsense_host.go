@@ -35,8 +35,8 @@ func hostUsage(out *os.File) {
 	fmt.Fprintln(out, "usage: mwan opnsense host <verb>")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
-	fmt.Fprintln(out, "  serve   run the Proxmox-host-side yamux bridge")
-	fmt.Fprintln(out, "  drain   run the chardev drainer that holds the qemu chardev open")
+	fmt.Fprintln(out, "  serve --config PATH   run the Proxmox-host-side yamux bridge")
+	fmt.Fprintln(out, "  drain --config PATH   run the chardev drainer that holds the qemu chardev open")
 }
 
 func runOPNsenseHost(args []string) int {
@@ -58,23 +58,27 @@ func runOPNsenseHost(args []string) int {
 	}
 }
 
-// runOPNsenseHostServe runs the host-side yamux bridge. All inputs
-// come from [opnsense.host] in the OPNsense tooling config.
+// hostServeCommand is the host bridge service. It needs nothing from the
+// environment.
+var hostServeCommand = serviceCommand{
+	name: "host serve",
+	description: []string{
+		"Run the Proxmox-host yamux bridge. It dials the drainer's relay socket and",
+		"serves the probe socket the operator verbs dial.",
+	},
+	configDoc:   "TOML file whose [opnsense.host] sets upstream, listen, reconnect, heartbeat_interval, and heartbeat_timeout",
+	environment: nil,
+}
+
+// runOPNsenseHostServe runs the host-side yamux bridge. All inputs come from
+// [opnsense.host] in the file --config names.
 func runOPNsenseHostServe(args []string) int {
-	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
-			fmt.Fprintln(os.Stdout, "usage: mwan opnsense host serve")
-			fmt.Fprintln(os.Stdout, "")
-			fmt.Fprintln(os.Stdout, "Reads upstream/listen/reconnect/heartbeat_* from [opnsense.host] in TOML.")
-			return 0
-		}
-	}
-	if len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "mwan opnsense host serve: unexpected arguments: %v\n", args)
-		return 2
+	configPath, exitCode, ok := parseServiceArgs(hostServeCommand, args)
+	if !ok {
+		return exitCode
 	}
 
-	cfg, err := loadOpnsenseConfig()
+	cfg, err := loadServiceConfig(configPath)
 	if err != nil {
 		return printAndExit("host serve", err)
 	}

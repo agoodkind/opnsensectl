@@ -1,23 +1,25 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // renderShim writes a sourceable copy of the embedded preflight shim with its
-// tail (the `preflight` call and the `exec` of the daemon) removed, so a test
-// can source it under /bin/sh to define the functions and default paths, then
-// override the paths and call `preflight` directly.
+// `main "$@"` tail removed, so a test can source it under /bin/sh to define the
+// functions and default paths, then override the paths and call `preflight` or
+// `main` directly.
 func renderShim(t *testing.T, dir string) string {
 	t.Helper()
 	rendered := string(runShim)
-	neutralized := strings.Replace(rendered, "preflight\nexec \"${daemon_bin}\"\n", "", 1)
+	neutralized := strings.Replace(rendered, "\nmain \"$@\"\n", "\n", 1)
 	if neutralized == rendered {
-		t.Fatal("shim does not contain the expected preflight+exec tail")
+		t.Fatal("shim does not contain the expected main tail")
 	}
 	scriptPath := filepath.Join(dir, "mwan-opnsense-run")
 	if err := os.WriteFile(scriptPath, []byte(neutralized), 0o700); err != nil {
@@ -33,24 +35,79 @@ func shimWrite(t *testing.T, path, content string) {
 	}
 }
 
-// TestRCDStartUsesRestartAndShim guards the supervision contract: the rc.d
-// start must launch daemon(8) with -r (auto-restart) against the preflight
-// shim, not the daemon binary directly, and must no longer run an inline
-// preflight (that logic moved into the shim).
-func TestRCDStartUsesRestartAndShim(t *testing.T) {
+// runShimMain sources the shim with its state paths under dir and runs its
+// main with args. It returns the combined output and the exit code.
+func runShimMain(t *testing.T, dir string, args ...string) (string, int) {
+	t.Helper()
+	shim := renderShim(t, dir)
+	commandText := strings.Join([]string{
+		"set -u",
+		`. "${SHIM}"`,
+		`sbin_dir="${DIR}"`,
+		`pending="${DIR}/pending"`,
+		`state="${DIR}/state"`,
+		`attempt="${DIR}/attempt"`,
+		`logger() { :; }`,
+		`main "$@"`,
+	}, "\n")
+	command := exec.CommandContext(t.Context(), "/bin/sh", append([]string{"-c", commandText, "mwan-opnsense-run"}, args...)...)
+	command.Env = append(os.Environ(), "SHIM="+shim, "DIR="+dir)
+	output, err := command.CombinedOutput()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return string(output), exitErr.ExitCode()
+	}
+	if err != nil {
+		t.Fatalf("run shim: %v\n%s", err, output)
+	}
+	return string(output), 0
+}
+
+// TestShimExecsTheCommandItIsGiven proves the shim runs exactly the daemon
+// command the rc.d script passes it, argv[0] included.
+func TestShimExecsTheCommandItIsGiven(t *testing.T) {
 	t.Parallel()
-	script := string(rcdScript)
-	wants := []string{
-		`run_shim="/usr/local/libexec/mwan-opnsense-run"`,
-		`/usr/sbin/daemon -r -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${run_shim}"`,
+	dir := t.TempDir()
+	argvLog := filepath.Join(dir, "argv.log")
+	daemonStub := filepath.Join(dir, "mwan-opnsense")
+	stubText := "#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > \"" + argvLog + "\"\n"
+	if err := os.WriteFile(daemonStub, []byte(stubText), 0o700); err != nil {
+		t.Fatalf("write daemon stub: %v", err)
 	}
-	for _, want := range wants {
-		if !strings.Contains(script, want) {
-			t.Errorf("rc.d script missing %q", want)
-		}
+
+	command := []string{daemonStub, "daemon", "serve", "--config", "/usr/local/etc/opnsensectl.conf"}
+	output, exitCode := runShimMain(t, dir, command...)
+	if exitCode != 0 {
+		t.Fatalf("shim exit code = %d, want 0\n%s", exitCode, output)
 	}
-	if strings.Contains(script, "mwan_opnsense_preflight") {
-		t.Error("rc.d script still references mwan_opnsense_preflight; preflight moved to the shim")
+	argvData, err := os.ReadFile(argvLog)
+	if err != nil {
+		t.Fatalf("daemon stub did not run: %v\n%s", err, output)
+	}
+	gotArgv := strings.Split(strings.TrimSuffix(string(argvData), "\n"), "\n")
+	if !slices.Equal(gotArgv, command) {
+		t.Errorf("daemon argv = %q, want %q", gotArgv, command)
+	}
+}
+
+// TestShimRefusesToRunWithoutACommand proves the shim never starts anything on
+// its own: with no command it fails with the usage exit code before the
+// preflight touches any state.
+func TestShimRefusesToRunWithoutACommand(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	attempt := filepath.Join(dir, "attempt")
+	shimWrite(t, attempt, "")
+
+	output, exitCode := runShimMain(t, dir)
+	if exitCode != 64 {
+		t.Errorf("shim exit code = %d, want 64\n%s", exitCode, output)
+	}
+	if !strings.Contains(output, "no daemon command given") {
+		t.Errorf("output = %q, want the missing command named", output)
+	}
+	if _, err := os.Stat(attempt); err != nil {
+		t.Errorf("the preflight ran without a command: attempt marker gone (%v)", err)
 	}
 }
 
@@ -108,7 +165,6 @@ func TestShimPreflight(t *testing.T) {
 				"set -u",
 				`. "${SHIM}"`,
 				`sbin_dir="${SBIN}"`,
-				`daemon_bin="${SBIN}/mwan-opnsense"`,
 				`pending="${PENDING}"`,
 				`state="${STATE}"`,
 				`attempt="${ATTEMPT}"`,

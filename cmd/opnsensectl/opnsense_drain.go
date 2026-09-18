@@ -107,6 +107,27 @@ func (h *drainHub) getChardev() net.Conn {
 	return h.chardev
 }
 
+// notifySocketEnv is the systemd notify socket. The drainer reports readiness
+// on it and stores the live chardev fd through it, which is what keeps the
+// chardev connected across a drainer restart.
+const notifySocketEnv = "NOTIFY_SOCKET"
+
+// hostDrainCommand is the chardev drainer service. It runs under a Type=notify
+// systemd unit, which sets notifySocketEnv.
+var hostDrainCommand = serviceCommand{
+	name: "host drain",
+	description: []string{
+		"Run the chardev drainer. It holds the qemu chardev open and relays it to the",
+		"bridge over the listen socket. systemd passes a stored chardev fd back through",
+		"LISTEN_FDS, LISTEN_PID, and LISTEN_FDNAMES after a restart; the drainer dials",
+		"the chardev fresh when they are absent.",
+	},
+	configDoc: "TOML file whose [opnsense.drain] sets chardev and listen",
+	environment: []serviceEnv{
+		{name: notifySocketEnv, purpose: "systemd notify socket for readiness and the chardev fd store (a Type=notify unit sets it)"},
+	},
+}
+
 // runOPNsenseHostDrain runs the host-side chardev drainer. It holds the qemu
 // virtio-serial chardev open and always reads it, so a bridge restart never
 // disconnects the host side and strands a guest write in the kernel (see
@@ -114,21 +135,12 @@ func (h *drainHub) getChardev() net.Conn {
 // place of the chardev. The chardev connection survives a drainer restart via
 // the systemd file descriptor store, so a deploy opens no wedge window.
 func runOPNsenseHostDrain(args []string) int {
-	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
-			fmt.Fprintln(os.Stdout, "usage: mwan opnsense host drain")
-			fmt.Fprintln(os.Stdout, "")
-			fmt.Fprintln(os.Stdout, "Reads chardev/listen from [opnsense.drain] in TOML. Holds the qemu")
-			fmt.Fprintln(os.Stdout, "chardev open and relays it to the bridge over the listen socket.")
-			return 0
-		}
-	}
-	if len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "mwan opnsense host drain: unexpected arguments: %v\n", args)
-		return 2
+	configPath, exitCode, ok := parseServiceArgs(hostDrainCommand, args)
+	if !ok {
+		return exitCode
 	}
 
-	cfg, err := loadOpnsenseConfig()
+	cfg, err := loadServiceConfig(configPath)
 	if err != nil {
 		return printAndExit("host drain", err)
 	}
@@ -356,7 +368,7 @@ func storeChardevFD(ctx context.Context, log *slog.Logger, c net.Conn) error {
 // go-systemd daemon helper cannot pass fds, so this hand-builds the message. It
 // is a no-op when not run under systemd (NOTIFY_SOCKET unset).
 func notifyWithFD(ctx context.Context, log *slog.Logger, state string, fd int) error {
-	sock := os.Getenv("NOTIFY_SOCKET")
+	sock := os.Getenv(notifySocketEnv)
 	if sock == "" {
 		return nil
 	}

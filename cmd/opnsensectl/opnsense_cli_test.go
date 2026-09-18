@@ -24,53 +24,6 @@ func writeTempTOML(t *testing.T, content string) string {
 	return path
 }
 
-// TestHostServeReadsTOML verifies that `mwan opnsense host serve`
-// resolves [opnsense.host] from a tempdir-scoped TOML rather than
-// falling back to a flag default. The TOML names a bogus upstream
-// scheme so the verb errors out at validation time after the section
-// has been read, which is the proof point: a "must be unix:///abs/path"
-// message means the [opnsense.host].upstream value made it from TOML
-// into the host serve runner.
-func TestHostServeReadsTOML(t *testing.T) {
-	writeTempTOML(t, `
-hostname = "host-test"
-
-[opnsense.host]
-upstream = "tcp://not-a-unix-socket"
-listen = "/tmp/mwan-test.sock"
-reconnect = "1s"
-heartbeat_interval = "5s"
-heartbeat_timeout = "2s"
-`)
-
-	cfg, err := loadOpnsenseConfig()
-	if err != nil {
-		t.Fatalf("loadOpnsenseConfig: %v", err)
-	}
-	upstream, err := requireHostUpstream(cfg)
-	if err != nil {
-		t.Fatalf("requireHostUpstream: %v", err)
-	}
-	if upstream != "tcp://not-a-unix-socket" {
-		t.Fatalf("upstream = %q, want %q", upstream, "tcp://not-a-unix-socket")
-	}
-	listen, err := requireHostListen(cfg)
-	if err != nil {
-		t.Fatalf("requireHostListen: %v", err)
-	}
-	if listen != "/tmp/mwan-test.sock" {
-		t.Fatalf("listen = %q, want %q", listen, "/tmp/mwan-test.sock")
-	}
-	reconnect, hbInterval, hbTimeout, err := parseHostDurations(cfg)
-	if err != nil {
-		t.Fatalf("parseHostDurations: %v", err)
-	}
-	if reconnect.String() != "1s" || hbInterval.String() != "5s" || hbTimeout.String() != "2s" {
-		t.Fatalf("durations reconnect=%s hbInterval=%s hbTimeout=%s",
-			reconnect, hbInterval, hbTimeout)
-	}
-}
-
 // TestFilePushErrorsOnEmptyProbeTarget verifies that requireProbeTarget
 // returns a clear error citing the missing TOML key when
 // [opnsense.probe].target is empty. The file push verb funnels every
@@ -157,10 +110,11 @@ func TestRequireDrainListen(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			writeTempTOML(t, "hostname = \"drain-test\"\n\n[opnsense.drain]\nlisten = \""+tc.listen+"\"\n")
-			cfg, err := loadOpnsenseConfig()
+			path := writeTestFile(t, t.TempDir(), "config.toml",
+				"hostname = \"drain-test\"\n\n[opnsense.drain]\nlisten = \""+tc.listen+"\"\n")
+			cfg, err := loadServiceConfig(path)
 			if err != nil {
-				t.Fatalf("loadOpnsenseConfig: %v", err)
+				t.Fatalf("loadServiceConfig: %v", err)
 			}
 			got, err := requireDrainListen(cfg)
 			if tc.wantErr {

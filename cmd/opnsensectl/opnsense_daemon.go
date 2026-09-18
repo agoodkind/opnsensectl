@@ -35,7 +35,7 @@ func daemonUsage(out *os.File) {
 	fmt.Fprintln(out, "usage: mwan opnsense daemon <verb> [args...]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
-	fmt.Fprintln(out, "  serve                       run the in-VM daemon (rc.d ExecStart)")
+	fmt.Fprintln(out, "  serve --config PATH         run the in-VM daemon (the rc.d service command)")
 	fmt.Fprintln(out, "  is-enabled                  exit 0 if rc.d service is enabled")
 	fmt.Fprintln(out, "  version                     print build identity from the running daemon")
 	fmt.Fprintln(out, "  state                       print deploy state (active sha, previous, health, deployed_at)")

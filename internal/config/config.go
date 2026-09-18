@@ -36,11 +36,6 @@ const (
 	SMTP2GOEnv = "SMTP2GO_API_KEY"
 )
 
-// defaultDrainSocket is the relay socket the chardev drainer listens on and the
-// host bridge dials. [opnsense.host].upstream and [opnsense.drain].listen must
-// name the same path, so both derive from this one constant to avoid drift.
-const defaultDrainSocket = "/var/run/mwan-opnsense-drain.sock"
-
 // Config is the top-level shape of the OPNsense tooling configuration.
 type Config struct {
 	OPNsense Section `toml:"opnsense"`
@@ -214,6 +209,25 @@ func loadFirstPresent(primary, legacy string) (*Config, error) {
 	return nil, legacyErr
 }
 
+// LoadFile reads exactly path for a long-running service. It applies no
+// defaults, reads no other file, and consults no environment variable, so every
+// value the service uses is one the named file sets. A missing or unreadable
+// file is an error that names it.
+func LoadFile(path string) (*Config, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		slog.Error("opnsense config: read failed", "path", path, "err", err)
+		return nil, fmt.Errorf("opnsense config: read %s: %w", path, err)
+	}
+	var cfg Config
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		slog.Error("opnsense config: parse failed", "path", path, "err", err)
+		return nil, fmt.Errorf("opnsense config: parse %s: %w", path, err)
+	}
+	cfg.Source = path
+	return &cfg, nil
+}
+
 // loadFile decodes path over the defaults, then lets SMTP2GOEnv replace the
 // file's API key. Keys outside the [opnsense.*] and [email] tables are ignored,
 // which is what lets it read the gateway configuration.
@@ -238,16 +252,18 @@ func loadFile(path string) (*Config, error) {
 func defaultConfig() Config {
 	return Config{
 		OPNsense: Section{
+			// The bridge and the drainer read their sections through LoadFile,
+			// which applies no defaults, so neither section has one here.
 			Host: HostSection{
-				Upstream:                  "unix://" + defaultDrainSocket,
-				Listen:                    "/var/run/mwan-opnsense.sock",
-				ReconnectDuration:         "2s",
-				HeartbeatIntervalDuration: "30s",
-				HeartbeatTimeoutDuration:  "10s",
+				Upstream:                  "",
+				Listen:                    "",
+				ReconnectDuration:         "",
+				HeartbeatIntervalDuration: "",
+				HeartbeatTimeoutDuration:  "",
 			},
 			Drain: DrainSection{
-				Chardev: "unix:///var/run/qemu-server/101.mwanrpc",
-				Listen:  defaultDrainSocket,
+				Chardev: "",
+				Listen:  "",
 			},
 			Probe: ProbeSection{
 				Target:                "unix:///var/run/mwan-opnsense.sock",
