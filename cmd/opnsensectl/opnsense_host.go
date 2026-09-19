@@ -32,7 +32,7 @@ const (
 )
 
 func hostUsage(out *os.File) {
-	fmt.Fprintln(out, "usage: mwan opnsense host <verb>")
+	fmt.Fprintln(out, "usage: opnsensectl host <verb>")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
 	fmt.Fprintln(out, "  serve --config PATH   run the Proxmox-host-side yamux bridge")

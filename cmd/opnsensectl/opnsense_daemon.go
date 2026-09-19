@@ -32,7 +32,7 @@ const (
 )
 
 func daemonUsage(out *os.File) {
-	fmt.Fprintln(out, "usage: mwan opnsense daemon <verb> [args...]")
+	fmt.Fprintln(out, "usage: opnsensectl daemon <verb> [args...]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
 	fmt.Fprintln(out, "  serve --config PATH         run the in-VM daemon (the rc.d service command)")
