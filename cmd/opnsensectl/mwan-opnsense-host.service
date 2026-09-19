@@ -11,9 +11,10 @@ Wants=mwan-opnsense-drain.service
 
 [Service]
 Type=simple
-# All inputs are read from /etc/opnsensectl/config.toml under [opnsense.host].
-# Override per host by templating that section, not by patching the unit.
-ExecStart=/usr/local/bin/opnsensectl host serve
+# All inputs are read from [opnsense.host] in the file --config names, and
+# from nowhere else. Override per host by templating that section, not by
+# patching the unit.
+ExecStart=/usr/local/bin/opnsensectl host serve --config /etc/opnsensectl/config.toml
 Restart=always
 RestartSec=5s
 StandardOutput=journal

@@ -78,7 +78,7 @@ func routerInstallFiles() []installFile {
 		{path: "/usr/local/libexec/mwan-opnsense-run", content: runShim, mode: 0o755, absentOnly: false},
 		{path: "/boot/loader.conf.d/mwan_opnsense.conf", content: loaderEntry, mode: 0o644, absentOnly: false},
 		{path: "/etc/rc.conf.d/mwan_opnsense", content: rcConfDefaults, mode: 0o644, absentOnly: true},
-		{path: daemoncfg.DefaultPath, content: daemoncfg.DefaultFile, mode: 0o600, absentOnly: true},
+		{path: daemoncfg.InstallPath, content: daemoncfg.DefaultFile, mode: 0o600, absentOnly: true},
 	}
 }
 

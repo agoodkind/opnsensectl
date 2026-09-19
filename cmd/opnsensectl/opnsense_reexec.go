@@ -25,6 +25,10 @@ import (
 // bridge detects the brief blip and rebuilds its yamux session. A
 // future change can preserve the fd across exec to remove that blip.
 //
+// The new image receives the running process's argv unchanged, so it runs
+// the same explicit `daemon serve --config PATH` command. The binary selects
+// nothing by file name, so argv[0] stays what the process was started with.
+//
 // execFn is [syscall.Exec] in production and a fake in tests.
 // [syscall.Exec] returns only on failure, so a non-nil return means the
 // exec did not happen and the caller should fall back to a clean exit.
@@ -37,12 +41,12 @@ func reExecCurrent(log *slog.Logger, binaryDir string, execFn func(argv0 string,
 		log.Error("re-exec: stat active binary failed", "target", target, "err", err)
 		return fmt.Errorf("re-exec: stat active binary %s: %w", target, err)
 	}
-	argv := append([]string(nil), os.Args...)
-	if len(argv) == 0 {
-		argv = []string{target}
-	} else {
-		argv[0] = target
+	if len(os.Args) < 2 {
+		err := fmt.Errorf("re-exec: the running argv %q carries no command to reuse", os.Args)
+		log.Error("re-exec: refusing to re-exec without the running command", "err", err)
+		return err
 	}
-	log.Info("mwan-opnsense: re-exec onto active binary", "target", target, "argc", len(argv))
+	argv := append([]string(nil), os.Args...)
+	log.Info("mwan-opnsense: re-exec onto active binary", "target", target, "argv", argv)
 	return execFn(target, argv, os.Environ())
 }

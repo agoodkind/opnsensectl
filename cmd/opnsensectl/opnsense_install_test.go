@@ -276,8 +276,8 @@ func TestInstallHostWritesAndEnablesUnits(t *testing.T) {
 	assertInstalled(t, in, units)
 
 	wantExec := map[string]string{
-		"/etc/systemd/system/mwan-opnsense-host.service":  "\nExecStart=/usr/local/bin/opnsensectl host serve\n",
-		"/etc/systemd/system/mwan-opnsense-drain.service": "\nExecStart=/usr/local/bin/opnsensectl host drain\n",
+		"/etc/systemd/system/mwan-opnsense-host.service":  "\nExecStart=/usr/local/bin/opnsensectl host serve --config /etc/opnsensectl/config.toml\n",
+		"/etc/systemd/system/mwan-opnsense-drain.service": "\nExecStart=/usr/local/bin/opnsensectl host drain --config /etc/opnsensectl/config.toml\n",
 	}
 	for path, line := range wantExec {
 		data, readErr := os.ReadFile(filepath.Join(in.root, path))

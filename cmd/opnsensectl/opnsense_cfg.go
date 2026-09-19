@@ -23,14 +23,26 @@ func wrapErr(ctx context.Context, op string, err error) error {
 }
 
 // loadOpnsenseConfig loads the OPNsense tooling config (see
-// [opnsensecfg.Load] for the file it picks) and returns it. All opnsense
-// subverbs that need TOML values funnel through this so the error
-// surface is uniform: a missing or unreadable config file is rejected
-// up-front with a clear message and the toml path in scope.
+// [opnsensecfg.Load] for the file it picks) and returns it. The operator
+// verbs that need TOML values funnel through this so the error surface is
+// uniform: a missing or unreadable config file is rejected up-front with a
+// clear message and the toml path in scope. The long-running services read
+// the file their --config names through loadServiceConfig instead.
 func loadOpnsenseConfig() (*opnsensecfg.Config, error) {
 	cfg, err := opnsensecfg.Load()
 	if err != nil {
 		slog.Error("opnsense: load config", "err", err)
+		return nil, fmt.Errorf("opnsense: load config: %w", err)
+	}
+	return cfg, nil
+}
+
+// loadServiceConfig loads exactly path, the file a service's --config names,
+// with no defaults and no environment override (see [opnsensecfg.LoadFile]).
+func loadServiceConfig(path string) (*opnsensecfg.Config, error) {
+	cfg, err := opnsensecfg.LoadFile(path)
+	if err != nil {
+		slog.Error("opnsense: load service config", "err", err, "path", path)
 		return nil, fmt.Errorf("opnsense: load config: %w", err)
 	}
 	return cfg, nil

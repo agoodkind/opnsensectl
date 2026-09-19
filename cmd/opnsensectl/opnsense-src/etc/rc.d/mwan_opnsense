@@ -7,10 +7,11 @@
 # REQUIRE: NETWORKING FILESYSTEMS
 # KEYWORD: shutdown
 #
-# The mwan opnsense daemon takes no flags; its runtime config lives in
-# /usr/local/etc/opnsensectl.conf, which opnsensectl install writes. The
-# rc.conf knobs below cover only supervision: where daemon(8) sends the
-# daemon's output and how long a stop waits before it kills.
+# The daemon starts only from its explicit command,
+#   /usr/local/sbin/mwan-opnsense daemon serve --config /usr/local/etc/opnsensectl.conf
+# which this script passes to the run shim. opnsensectl install writes that
+# config file. The rc.conf knobs below cover only supervision: where daemon(8)
+# sends the daemon's output and how long a stop waits before it kills.
 #
 # Enable in /etc/rc.conf with:
 #   mwan_opnsense_enable="YES"
@@ -33,8 +34,9 @@ load_rc_config "$name"
 pidfile="/var/run/${name}.pid"
 child_pidfile="/var/run/${name}.child.pid"
 command="/usr/local/sbin/mwan-opnsense"
+daemon_config="/usr/local/etc/opnsensectl.conf"
 run_shim="/usr/local/libexec/mwan-opnsense-run"
-required_files="${command} ${run_shim}"
+required_files="${command} ${run_shim} ${daemon_config}"
 
 start_cmd="${name}_start"
 stop_cmd="${name}_stop"
@@ -71,10 +73,13 @@ mwan_opnsense_start() {
 	# to ${mwan_opnsense_logfile}. The supervised target is the preflight
 	# shim, not the daemon directly: daemon(8) re-execs the shim on every
 	# (re)spawn, so the deploy preflight (revert a bad self-deploy to
-	# .previous) runs before the first start and before every respawn. A
-	# SIGTERM to the supervisor (service stop) forwards to the child and
-	# exits without respawning, so stop still means down.
-	/usr/sbin/daemon -r -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${run_shim}"
+	# .previous) runs before the first start and before every respawn. The
+	# arguments after the shim are the daemon's full command, which the shim
+	# exec's after the preflight. A SIGTERM to the supervisor (service stop)
+	# forwards to the child and exits without respawning, so stop still means
+	# down.
+	/usr/sbin/daemon -r -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" \
+		"${run_shim}" "${command}" daemon serve --config "${daemon_config}"
 
 	count=0
 	while [ "${count}" -lt 10 ]; do

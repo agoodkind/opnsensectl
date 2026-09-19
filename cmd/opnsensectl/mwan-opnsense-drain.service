@@ -5,11 +5,13 @@ After=network.target qemu-server.service
 Wants=network.target
 
 [Service]
-# All inputs are read from /etc/opnsensectl/config.toml under [opnsense.drain].
-# Override per host by templating that section, not by patching the unit. The
-# drainer binds [opnsense.drain].listen itself, so no socket unit is needed.
+# All inputs are read from [opnsense.drain] in the file --config names, and
+# from nowhere else. Override per host by templating that section, not by
+# patching the unit. The drainer binds [opnsense.drain].listen itself, so no
+# socket unit is needed. Type=notify sets NOTIFY_SOCKET, which the drainer
+# requires at startup.
 Type=notify
-ExecStart=/usr/local/bin/opnsensectl host drain
+ExecStart=/usr/local/bin/opnsensectl host drain --config /etc/opnsensectl/config.toml
 Restart=always
 RestartSec=0
 StandardOutput=journal

@@ -4,8 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"goodkind.io/opnsensectl/internal/daemoncfg"
 )
 
 const rcSubrStub = `load_rc_config() { :; }
@@ -49,22 +52,26 @@ const (
 	rcdServicePath = "/sbin:/bin:/usr/sbin:/usr/bin"
 )
 
-// TestRCDStartGivesDaemonTheBootPath runs the real start function the way
-// service(8) runs it, with an emptied environment and the short PATH, and
-// asserts that daemon(8) is launched with the boot PATH. A stub stands in for
-// daemon(8): it records the PATH it inherited and writes the calling shell's pid
+// TestRCDStartGivesDaemonTheBootPathAndTheExplicitCommand runs the real start
+// function the way service(8) runs it, with an emptied environment and the
+// short PATH, and asserts that daemon(8) is launched with the boot PATH,
+// auto-restart, and the run shim followed by the daemon's full command naming
+// the config file install writes. A stub stands in for daemon(8): it records
+// the PATH it inherited and its arguments, and writes the calling shell's pid
 // as the supervisor pidfile, so the start's status poll finds a live process.
-func TestRCDStartGivesDaemonTheBootPath(t *testing.T) {
+func TestRCDStartGivesDaemonTheBootPathAndTheExplicitCommand(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	scriptPath, rcSubrPath := renderRCDScript(t, dir)
 
 	pathLog := filepath.Join(dir, "daemon-path.log")
+	argvLog := filepath.Join(dir, "daemon-argv.log")
 	daemonStub := filepath.Join(dir, "daemon")
 	stubText := strings.Join([]string{
 		"#!/bin/sh",
 		`printf '%s\n' "${PATH}" > "` + pathLog + `"`,
+		`printf '%s\n' "$@" > "` + argvLog + `"`,
 		`printf '%s' "${PPID}" > "$3"`,
 	}, "\n") + "\n"
 	if err := os.WriteFile(daemonStub, []byte(stubText), 0o700); err != nil {
@@ -111,6 +118,21 @@ func TestRCDStartGivesDaemonTheBootPath(t *testing.T) {
 	}
 	if got := strings.TrimSuffix(string(pathData), "\n"); got != rcdBootPath {
 		t.Fatalf("daemon(8) PATH = %q, want the boot PATH %q", got, rcdBootPath)
+	}
+
+	argvData, err := os.ReadFile(argvLog)
+	if err != nil {
+		t.Fatalf("daemon stub recorded no arguments: %v", err)
+	}
+	pidfile := filepath.Join(dir, "mwan_opnsense.pid")
+	wantArgv := []string{
+		"-r", "-P", pidfile, "-p", pidfile + ".child", "-o", "/var/log/mwan-opnsense.log",
+		"/usr/local/libexec/mwan-opnsense-run",
+		"/usr/local/sbin/mwan-opnsense", "daemon", "serve", "--config", daemoncfg.InstallPath,
+	}
+	gotArgv := strings.Split(strings.TrimSuffix(string(argvData), "\n"), "\n")
+	if !slices.Equal(gotArgv, wantArgv) {
+		t.Fatalf("daemon(8) argv = %q, want %q", gotArgv, wantArgv)
 	}
 }
 

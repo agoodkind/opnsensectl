@@ -24,8 +24,8 @@ const (
 	// rc.subr path the is-enabled check resolves. Both live on FreeBSD
 	// hosts and have stable conventional paths. The serial path, baud,
 	// config.xml path, backup dir, state dir, and logfile path are
-	// recorded in the daemon-side TOML (/usr/local/etc/opnsensectl.conf);
-	// only rc.d supervision details stay compiled in here.
+	// recorded in the daemon-side TOML that --config names; only rc.d
+	// supervision details stay compiled in here.
 	defaultRCName = "mwan_opnsense"
 	defaultRCSubr = "/etc/rc.subr"
 
@@ -39,35 +39,35 @@ const (
 	daemonStopTimeout = 8 * time.Second
 )
 
+// daemonServeCommand is the in-VM daemon service. It runs commands by bare
+// name over the Exec RPC, so it requires PATH.
+var daemonServeCommand = serviceCommand{
+	name: "daemon serve",
+	description: []string{
+		"Run the in-VM dispatcher daemon on the virtio-serial device. The rc.d service",
+		"starts it as `daemon serve --config " + daemoncfg.InstallPath + "`.",
+	},
+	configDoc: "TOML file whose [daemon] sets serial_path, baud, config_xml_path, backup_dir, logfile, and state_dir",
+	environment: []serviceEnv{
+		{name: "PATH", purpose: "search path for the commands the Exec RPC runs by bare name (rc.d sets the boot PATH)"},
+	},
+}
+
 // runOPNsenseDaemonServe starts the MWN1 dispatcher daemon with the
 // virtio-serial-pci listener. There is exactly one listener and exactly
 // one peer; auth is unix socket permissions on the host side (root-only)
 // so the daemon does not authenticate at the application layer.
 //
-// The serve verb takes no flags. The serial path, baud, config.xml path,
-// backup dir, and transfer state dir come from the file daemoncfg.Load reads
-// (/usr/local/etc/opnsensectl.conf, written by opnsensectl install). That file
-// also records the rc.d-owned logfile path even though the serve process does
-// not open the logfile.
-// The verb still accepts an empty arg slice or a help token for forward
-// compatibility.
+// The serial path, baud, config.xml path, backup dir, and transfer state dir
+// come from the file --config names. That file also records the rc.d-owned
+// logfile path even though the serve process does not open the logfile.
 func runOPNsenseDaemonServe(args []string) int {
-	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
-			fmt.Fprintln(os.Stdout, "usage: mwan opnsense daemon serve")
-			fmt.Fprintln(os.Stdout, "")
-			fmt.Fprintln(os.Stdout, "Run the in-VM dispatcher daemon. No flags; runtime config")
-			fmt.Fprintln(os.Stdout, "is loaded from /usr/local/etc/opnsensectl.conf (written by")
-			fmt.Fprintln(os.Stdout, "opnsensectl install).")
-			return 0
-		}
-	}
-	if len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "mwan opnsense daemon serve: unexpected arguments: %v\n", args)
-		return 2
+	daemonConfigPath, exitCode, ok := parseServiceArgs(daemonServeCommand, args)
+	if !ok {
+		return exitCode
 	}
 
-	cfg, cfgErr := daemoncfg.Load()
+	cfg, cfgErr := daemoncfg.Load(daemonConfigPath)
 	if cfgErr != nil {
 		fmt.Fprintf(os.Stderr, "daemon serve: load config: %v\n", cfgErr)
 		return 1

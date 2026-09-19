@@ -107,22 +107,65 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 	}
 }
 
-func TestLoadFileDefaultsEverySectionForAnEmptyFile(t *testing.T) {
+// TestServiceLoadFileAppliesNoDefaultsAndNoEnvironment proves a service reads
+// only what its named file sets: an empty file leaves every service key empty,
+// and SMTP2GOEnv does not reach the loaded config.
+func TestServiceLoadFileAppliesNoDefaultsAndNoEnvironment(t *testing.T) {
+	t.Setenv(SMTP2GOEnv, "key-from-environment")
 	path := writeFile(t, t.TempDir(), "config.toml", "")
 
-	cfg, err := loadFile(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("loadFile: %v", err)
+		t.Fatalf("LoadFile: %v", err)
 	}
 
-	if cfg.OPNsense.Host.Upstream != "unix:///var/run/mwan-opnsense-drain.sock" {
-		t.Errorf("host upstream = %q, want the drain relay socket", cfg.OPNsense.Host.Upstream)
+	if cfg.Source != path {
+		t.Errorf("Source = %q, want %q", cfg.Source, path)
 	}
-	if cfg.OPNsense.Drain.Listen != "/var/run/mwan-opnsense-drain.sock" {
-		t.Errorf("drain listen = %q, want the drain relay socket", cfg.OPNsense.Drain.Listen)
+	if cfg.OPNsense.Host != (HostSection{}) {
+		t.Errorf("host = %+v, want every key empty", cfg.OPNsense.Host)
 	}
-	if cfg.OPNsense.Host.HeartbeatIntervalDuration != "30s" {
-		t.Errorf("host heartbeat interval = %q, want 30s", cfg.OPNsense.Host.HeartbeatIntervalDuration)
+	if cfg.OPNsense.Drain != (DrainSection{}) {
+		t.Errorf("drain = %+v, want every key empty", cfg.OPNsense.Drain)
+	}
+	if cfg.Email.SMTP2GOAPIKey != "" {
+		t.Errorf("smtp2go_api_key = %q, want the environment ignored", cfg.Email.SMTP2GOAPIKey)
+	}
+}
+
+func TestServiceLoadFileReadsTheRenderedHostFile(t *testing.T) {
+	path := writeFile(t, t.TempDir(), "config.toml", hostFile)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+
+	want := HostSection{
+		Upstream:                  "unix:///run/test-drain.sock",
+		Listen:                    "/run/test-bridge.sock",
+		ReconnectDuration:         "3s",
+		HeartbeatIntervalDuration: "40s",
+		HeartbeatTimeoutDuration:  "12s",
+	}
+	if cfg.OPNsense.Host != want {
+		t.Errorf("host = %+v, want %+v", cfg.OPNsense.Host, want)
+	}
+	wantDrain := DrainSection{Chardev: "unix:///var/run/qemu-server/4242.mwanrpc", Listen: "/run/test-drain.sock"}
+	if cfg.OPNsense.Drain != wantDrain {
+		t.Errorf("drain = %+v, want %+v", cfg.OPNsense.Drain, wantDrain)
+	}
+}
+
+func TestServiceLoadFileFailsNamingAMissingFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.toml")
+
+	_, err := LoadFile(missing)
+	if err == nil {
+		t.Fatal("LoadFile succeeded for a missing file")
+	}
+	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), missing) {
+		t.Errorf("error = %v, want a not-exist error naming %s", err, missing)
 	}
 }
 

@@ -2,12 +2,14 @@
 # shellcheck shell=sh
 # mwan-opnsense-run: the supervised entry point for daemon(8) -r.
 #
-# daemon(8) re-execs this shim on every (re)spawn, so it runs the deploy
-# preflight before every start of the daemon, then exec's the daemon
-# (replacing this shim's process image, preserving argv0 so the binary
-# starts in daemon mode). The preflight verifies a freshly deployed binary
-# and reverts to the last known-good binary if the new one fails to come up
-# healthy.
+# Usage: mwan-opnsense-run DAEMON_BINARY ARG...
+#
+# daemon(8) re-execs this shim with the same arguments on every (re)spawn, so
+# it runs the deploy preflight before every start of the daemon, then exec's
+# its arguments, the daemon's full command, which the rc.d script passes. The
+# shim holds no command of its own and refuses to run without one. The
+# preflight verifies a freshly deployed binary and reverts to the last
+# known-good binary if the new one fails to come up healthy.
 #
 # Paths mirror the daemon's deploy state machine, internal/svc/deploy.go in
 # agoodkind/opnsensectl.
@@ -18,8 +20,9 @@
 
 set -u
 
+EXIT_USAGE=64
+
 sbin_dir="/usr/local/sbin"
-daemon_bin="${sbin_dir}/mwan-opnsense"
 pending="/var/run/mwan-opnsense.pending-verify"
 state="/var/run/mwan-opnsense.deploy.state"
 attempt="/var/run/mwan-opnsense.boot-attempt"
@@ -72,5 +75,14 @@ preflight() {
 	return 0
 }
 
-preflight
-exec "${daemon_bin}"
+main() {
+	if [ "$#" -eq 0 ]; then
+		echo "mwan-opnsense-run: no daemon command given; usage: mwan-opnsense-run DAEMON_BINARY ARG..." >&2
+		logger -t mwan-opnsense-deploy "run shim started without a daemon command; refusing to run"
+		exit "${EXIT_USAGE}"
+	fi
+	preflight
+	exec "$@"
+}
+
+main "$@"
