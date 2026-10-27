@@ -11,12 +11,12 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/hashicorp/yamux v0.1.2
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sys v0.49.0
 	goodkind.io/gklog v0.4.5
 	goodkind.io/send-email v0.0.0-20260604011720-40a2ede56cd9
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

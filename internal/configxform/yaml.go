@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Substitutions is the operator-supplied table that drives the transform.
