@@ -217,8 +217,8 @@ func TestRunExec_TimeoutKillsChildThatIgnoresStdin(t *testing.T) {
 func TestRunExec_CappedBufferDoesNotWedge(t *testing.T) {
 	start := time.Now()
 	res, err := runExec(context.Background(), ExecArgs{
-		Command:        "/bin/sh",
-		Args:           []string{"-c", "yes hello | head -c 50000000"},
+		Command:        "/bin/dd",
+		Args:           []string{"if=/dev/zero", "bs=1000000", "count=50"},
 		TimeoutSeconds: 30,
 	})
 	if err != nil {
