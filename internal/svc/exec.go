@@ -57,11 +57,18 @@ type ExecResult struct {
 // runExec is the pure execution implementation. ctx provides the
 // outer deadline; the per-call timeout is layered on top.
 func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
-	slog.DebugContext(ctx, "opnsensesvc: runExec",
-		"command", args.Command,
-		"args_len", len(args.Args),
-		"sudo", args.Sudo,
-		"timeout_seconds", args.TimeoutSeconds)
+	slog.DebugContext(
+		ctx,
+		"opnsensesvc: runExec",
+		"command",
+		args.Command,
+		"args_len",
+		len(args.Args),
+		"sudo",
+		args.Sudo,
+		"timeout_seconds",
+		args.TimeoutSeconds,
+	)
 	if err := validateExecArgs(args); err != nil {
 		return nil, err
 	}
@@ -70,9 +77,11 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 	if timeout <= 0 {
 		timeout = defaultExecTimeout
 	}
+
 	if timeout > maxExecTimeout {
 		timeout = maxExecTimeout
 	}
+
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -81,6 +90,7 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		cmdName = "sudo"
 		cmdArgs = append([]string{"-n", args.Command}, args.Args...)
 	}
+
 	cmd := exec.CommandContext(cctx, cmdName, cmdArgs...)
 	// Run the child in its own process group and kill the whole group when
 	// the per-call timeout fires. Without this, a grandchild (e.g. the
@@ -95,14 +105,22 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		if cmd.Process == nil {
 			return nil
 		}
+
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 			if errors.Is(err, syscall.ESRCH) {
 				return os.ErrProcessDone
 			}
-			return logWrappedErrorContext(cctx, args.Log,
-				"opnsensesvc: kill process group failed", "runExec cancel", err,
-				slog.Int("pid", cmd.Process.Pid))
+
+			return logWrappedErrorContext(
+				cctx,
+				args.Log,
+				"opnsensesvc: kill process group failed",
+				"runExec cancel",
+				err,
+				slog.Int("pid", cmd.Process.Pid),
+			)
 		}
+
 		return nil
 	}
 	cmd.WaitDelay = execWaitDelay
@@ -110,8 +128,18 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		cmd.Stdin = bytes.NewReader(args.StdinBytes)
 	}
 
-	stdoutBuf := &cappedBuffer{cap: maxOutputBytes, buf: bytes.Buffer{}, truncated: false, bytesWrote: 0}
-	stderrBuf := &cappedBuffer{cap: maxOutputBytes, buf: bytes.Buffer{}, truncated: false, bytesWrote: 0}
+	stdoutBuf := &cappedBuffer{
+		cap:        maxOutputBytes,
+		buf:        bytes.Buffer{},
+		truncated:  false,
+		bytesWrote: 0,
+	}
+	stderrBuf := &cappedBuffer{
+		cap:        maxOutputBytes,
+		buf:        bytes.Buffer{},
+		truncated:  false,
+		bytesWrote: 0,
+	}
 	cmd.Stdout = stdoutBuf
 	cmd.Stderr = stderrBuf
 
@@ -136,13 +164,20 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 			res.ExitCode = clampToInt32(exitErr.ExitCode())
 			return res, nil
 		}
+
 		if res.TimedOut {
 			res.ExitCode = -1
 			return res, nil
 		}
-		return res, logWrappedErrorContext(ctx, args.Log,
-			"opnsensesvc: exec command failed", "runExec", runErr,
-			slog.String("command", args.Command))
+
+		return res, logWrappedErrorContext(
+			ctx,
+			args.Log,
+			"opnsensesvc: exec command failed",
+			"runExec",
+			runErr,
+			slog.String("command", args.Command),
+		)
 	}
 
 	return res, nil
@@ -152,20 +187,25 @@ func validateExecArgs(args ExecArgs) error {
 	if args.Command == "" {
 		return errors.New("exec: empty command")
 	}
+
 	if strings.ContainsRune(args.Command, 0) {
 		return errors.New("exec: command contains null byte")
 	}
+
 	if len(args.Command) > 4096 {
 		return errors.New("exec: command too long")
 	}
+
 	for i, a := range args.Args {
 		if strings.ContainsRune(a, 0) {
 			return fmt.Errorf("exec: arg[%d] contains null byte", i)
 		}
+
 		if len(a) > 4096 {
 			return fmt.Errorf("exec: arg[%d] too long", i)
 		}
 	}
+
 	return nil
 }
 
@@ -185,16 +225,19 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 		c.truncated = true
 		return want, nil // pretend we accepted; subprocess keeps running
 	}
+
 	if len(p) > remaining {
 		c.truncated = true
 		p = p[:remaining]
 	}
+
 	n, err := c.buf.Write(p)
 	c.bytesWrote += n
 	if err != nil {
 		slog.Error("opnsensesvc: capped buffer write failed", "err", err)
 		return n, fmt.Errorf("capped buffer write: %w", err)
 	}
+
 	return want, nil
 }
 

@@ -83,14 +83,18 @@ func snapshotListingCases() []snapshotListingCase {
 
 func TestSnapshotsAfterMatchesRecordedWatchdogParserOutput(t *testing.T) {
 	t.Parallel()
+
 	for _, tc := range snapshotListingCases() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := snapshotsAfter([]byte(tc.listing), tc.target)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("snapshotsAfter = %#v, want %#v", got, tc.want)
-			}
-		})
+		t.Run(
+			tc.name,
+			func(t *testing.T) {
+				t.Parallel()
+				got := snapshotsAfter([]byte(tc.listing), tc.target)
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("snapshotsAfter = %#v, want %#v", got, tc.want)
+				}
+			},
+		)
 	}
 }
 
@@ -108,21 +112,25 @@ func TestRollbackDeletesWatchdogChildrenNewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 
 	s.mu.Lock()
 	s.deletes = nil
-	s.listing = []byte("`-> known-good-1699990000                  2023-11-14 19:26:40     watchdog\n" +
-		"    `-> " + prepared.Snapshot + "          2023-11-14 22:13:20     opnsense-upgrade\n" +
-		"        `-> pre-deploy-1700000100          2023-11-14 22:15:00     watchdog\n" +
-		"            `-> manual-before-vlan-change  2023-11-14 22:15:50     operator\n" +
-		"                `-> known-good-1700000200  2023-11-14 22:16:40     watchdog\n" +
-		"                    `-> current                                    You are here!\n")
+	s.listing = []byte(
+		"`-> known-good-1699990000                  2023-11-14 19:26:40     watchdog\n" +
+			"    `-> " + prepared.Snapshot + "          2023-11-14 22:13:20     opnsense-upgrade\n" +
+			"        `-> pre-deploy-1700000100          2023-11-14 22:15:00     watchdog\n" +
+			"            `-> manual-before-vlan-change  2023-11-14 22:15:50     operator\n" +
+			"                `-> known-good-1700000200  2023-11-14 22:16:40     watchdog\n" +
+			"                    `-> current                                    You are here!\n",
+	)
 	s.mu.Unlock()
 
 	if _, err := Rollback(context.Background(), deps, opts); err != nil {
@@ -136,6 +144,7 @@ func TestRollbackDeletesWatchdogChildrenNewestFirst(t *testing.T) {
 	if !reflect.DeepEqual(s.deletes, wantDeletes) {
 		t.Fatalf("deletes = %+v, want %+v", s.deletes, wantDeletes)
 	}
+
 	wantRollbacks := []snapshotCall{{VMID: "101", Snap: prepared.Snapshot}}
 	if !reflect.DeepEqual(s.rollbacks, wantRollbacks) {
 		t.Fatalf("rollbacks = %+v, want %+v", s.rollbacks, wantRollbacks)

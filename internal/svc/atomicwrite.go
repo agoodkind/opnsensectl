@@ -20,23 +20,46 @@ func AtomicWriteFile(ctx context.Context, target string, content []byte, mode os
 	dir := filepath.Dir(target)
 	pending, err := renameio.NewPendingFile(target, renameio.WithStaticPermissions(mode))
 	if err != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite pending", "atomicwrite: pending "+target, err,
-			slog.String("path", target))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite pending",
+			"atomicwrite: pending "+target,
+			err,
+			slog.String("path", target),
+		)
 	}
+
 	defer func() { _ = pending.Cleanup() }()
 	if _, writeErr := pending.Write(content); writeErr != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite write", "atomicwrite: write "+target, writeErr,
-			slog.String("path", target))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite write",
+			"atomicwrite: write "+target,
+			writeErr,
+			slog.String("path", target),
+		)
 	}
+
 	if closeErr := pending.CloseAtomicallyReplace(); closeErr != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite rename", "atomicwrite: rename "+target, closeErr,
-			slog.String("path", target))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite rename",
+			"atomicwrite: rename "+target,
+			closeErr,
+			slog.String("path", target),
+		)
 	}
-	slog.Default().DebugContext(ctx, "opnsensesvc: AtomicWriteFile",
-		slog.String("path", target), slog.Int("bytes", len(content)))
+
+	slog.Default().DebugContext(
+		ctx,
+		"opnsensesvc: AtomicWriteFile",
+		slog.String("path", target),
+		slog.Int("bytes", len(content)),
+	)
+
 	return fsyncDir(ctx, dir)
 }
 
@@ -45,12 +68,24 @@ func AtomicWriteFile(ctx context.Context, target string, content []byte, mode os
 // responsible for fsyncing the source's contents before calling.
 func AtomicRenameFile(ctx context.Context, source, target string) error {
 	if err := os.Rename(source, target); err != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite rename", "atomicwrite: rename "+source+" -> "+target, err,
-			slog.String("source", source), slog.String("target", target))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite rename",
+			"atomicwrite: rename "+source+" -> "+target,
+			err,
+			slog.String("source", source),
+			slog.String("target", target),
+		)
 	}
-	slog.Default().DebugContext(ctx, "opnsensesvc: AtomicRenameFile",
-		slog.String("source", source), slog.String("target", target))
+
+	slog.Default().DebugContext(
+		ctx,
+		"opnsensesvc: AtomicRenameFile",
+		slog.String("source", source),
+		slog.String("target", target),
+	)
+
 	return fsyncDir(ctx, filepath.Dir(target))
 }
 
@@ -60,21 +95,39 @@ func AtomicRenameFile(ctx context.Context, source, target string) error {
 func fsyncDir(ctx context.Context, dir string) error {
 	directory, err := os.Open(dir)
 	if err != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite open dir", "atomicwrite: open dir "+dir, err,
-			slog.String("dir", dir))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite open dir",
+			"atomicwrite: open dir "+dir,
+			err,
+			slog.String("dir", dir),
+		)
 	}
+
 	syncErr := directory.Sync()
 	closeErr := directory.Close()
 	if syncErr != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite sync dir", "atomicwrite: sync dir "+dir, syncErr,
-			slog.String("dir", dir))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite sync dir",
+			"atomicwrite: sync dir "+dir,
+			syncErr,
+			slog.String("dir", dir),
+		)
 	}
+
 	if closeErr != nil {
-		return logWrappedErrorContext(ctx, slog.Default(),
-			"opnsensesvc: atomicwrite close dir", "atomicwrite: close dir "+dir, closeErr,
-			slog.String("dir", dir))
+		return logWrappedErrorContext(
+			ctx,
+			slog.Default(),
+			"opnsensesvc: atomicwrite close dir",
+			"atomicwrite: close dir "+dir,
+			closeErr,
+			slog.String("dir", dir),
+		)
 	}
+
 	return nil
 }

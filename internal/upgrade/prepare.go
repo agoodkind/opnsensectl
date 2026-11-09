@@ -35,11 +35,14 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		slog.ErrorContext(ctx, "upgrade.Prepare: invalid options", "err", err)
 		return emptyState(), err
 	}
+
 	if deps.Snap == nil {
 		err := errors.New("upgrade.Prepare: deps.Snap is required")
 		slog.ErrorContext(ctx, "upgrade.Prepare: deps.Snap missing", "err", err)
+
 		return emptyState(), err
 	}
+
 	clk := clockOrDefault(deps.Clock)
 	now := clk.Now()
 
@@ -50,6 +53,7 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 			slog.ErrorContext(ctx, "upgrade.Prepare: deploy id", "err", err)
 			return emptyState(), fmt.Errorf("upgrade.Prepare: deploy id: %w", err)
 		}
+
 		deployID = generated
 	}
 
@@ -58,41 +62,80 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		slog.ErrorContext(ctx, "upgrade.Prepare: load state", "err", err, "vmid", opts.VMID)
 		return emptyState(), err
 	}
+
 	// allowedTransitions decides which phases can open a cycle. A
 	// committed cycle is finished and its snapshot is already released,
 	// so the next prepare starts from it and overwrites every field
 	// below. A rollback_failed cycle still refuses.
 	if err := EnforceTransition(cur.Phase, PhasePrepared); err != nil {
-		slog.ErrorContext(ctx, "upgrade.Prepare: refusing transition",
-			"err", err, "from", cur.Phase, "to", PhasePrepared)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: refusing transition",
+			"err",
+			err,
+			"from",
+			cur.Phase,
+			"to",
+			PhasePrepared,
+		)
+
 		return cur, err
 	}
 
 	deployDir := deployPathFor(opts.StateDir, opts.VMID, deployID)
 	if err := os.MkdirAll(deployDir, 0o750); err != nil {
-		slog.ErrorContext(ctx, "upgrade.Prepare: mkdir deploy dir failed", "err", err, "path", deployDir)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: mkdir deploy dir failed",
+			"err",
+			err,
+			"path",
+			deployDir,
+		)
 		return emptyState(), fmt.Errorf("upgrade.Prepare: mkdir deploy dir: %w", err)
 	}
 
 	snap := SnapshotName(now)
 
 	if err := capturePreUpgradeArtefacts(ctx, deps, opts, deployDir); err != nil {
-		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
+		emit(
+			ctx,
+			deps.Notifier,
+			slog.LevelError,
+			KindPrepare,
+			opts.VMID,
 			"opnsense-upgrade prepare: pre-upgrade artefact capture failed",
 			slog.String("vmid", opts.VMID),
 			slog.String("deploy_id", deployID),
 			slog.String("err", err.Error()),
 		)
-		slog.ErrorContext(ctx, "upgrade.Prepare: capture artefacts failed",
-			"err", err, "vmid", opts.VMID, "deploy_id", deployID)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture artefacts failed",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+			"deploy_id",
+			deployID,
+		)
+
 		return emptyState(), err
 	}
 
 	if opts.UseBootEnvironment && deps.Exec != nil {
 		bectlOK := captureBootEnvironment(ctx, deps, opts, deployDir, clk)
 		if logger := deps.Log; logger != nil {
-			logger.InfoContext(ctx, "upgrade.Prepare: boot environment capture",
-				"vmid", opts.VMID, "deploy_id", deployID, "ok", bectlOK)
+			logger.InfoContext(
+				ctx,
+				"upgrade.Prepare: boot environment capture",
+				"vmid",
+				opts.VMID,
+				"deploy_id",
+				deployID,
+				"ok",
+				bectlOK,
+			)
 		}
 	}
 
@@ -110,6 +153,7 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		UseBootEnv: opts.UseBootEnvironment,
 		DryRunExec: opts.DryRunExecute,
 	}
+
 	return takeSnapshotAndPersistState(ctx, deps, opts, deployID, snap, now, meta)
 }
 
@@ -126,19 +170,34 @@ func takeSnapshotAndPersistState(
 	ctx context.Context,
 	deps Deps,
 	opts Options,
-	deployID, snap string,
+	deployID string,
+	snap string,
 	now time.Time,
 	meta metadata,
 ) (State, error) {
 	if err := deps.Snap.VMSnapshot(ctx, opts.VMID, snap); err != nil {
-		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
+		emit(
+			ctx,
+			deps.Notifier,
+			slog.LevelError,
+			KindPrepare,
+			opts.VMID,
 			"opnsense-upgrade prepare: snapshot creation failed",
 			slog.String("vmid", opts.VMID),
 			slog.String("snapshot", snap),
 			slog.String("err", err.Error()),
 		)
-		slog.ErrorContext(ctx, "upgrade.Prepare: VMSnapshot failed",
-			"err", err, "vmid", opts.VMID, "snapshot", snap)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: VMSnapshot failed",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+			"snapshot",
+			snap,
+		)
+
 		return emptyState(), fmt.Errorf("upgrade.Prepare: VMSnapshot: %w", err)
 	}
 
@@ -160,15 +219,30 @@ func takeSnapshotAndPersistState(
 		slog.ErrorContext(ctx, "upgrade.Prepare: save state", "err", err, "vmid", opts.VMID)
 		return emptyState(), err
 	}
-	emit(ctx, deps.Notifier, slog.LevelInfo, KindPrepare, opts.VMID,
+
+	emit(
+		ctx,
+		deps.Notifier,
+		slog.LevelInfo,
+		KindPrepare,
+		opts.VMID,
 		"opnsense-upgrade prepare: snapshot taken",
 		slog.String("vmid", opts.VMID),
 		slog.String("deploy_id", deployID),
 		slog.String("snapshot", snap),
 		slog.String("target", opts.Target),
 	)
-	slog.InfoContext(ctx, "upgrade.Prepare: snapshot taken",
-		"vmid", opts.VMID, "snapshot", snap, "deploy_id", deployID)
+	slog.InfoContext(
+		ctx,
+		"upgrade.Prepare: snapshot taken",
+		"vmid",
+		opts.VMID,
+		"snapshot",
+		snap,
+		"deploy_id",
+		deployID,
+	)
+
 	return st, nil
 }
 
@@ -176,19 +250,29 @@ func takeSnapshotAndPersistState(
 // true on success. The exit code is treated as advisory: a non-zero
 // exit on a non-ZFS guest is expected and documented as best-effort,
 // not an error.
-func captureBootEnvironment(ctx context.Context, deps Deps, opts Options, deployDir string, clk Clock) bool {
+func captureBootEnvironment(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	deployDir string,
+	clk Clock,
+) bool {
 	beName := fmt.Sprintf("pre-mwan152-%d", clk.Now().Unix())
 	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestBectl, "create", beName)
 	if err != nil {
 		_ = WriteFileBytes(ctx, filepath.Join(deployDir, "bectl.err"), []byte(err.Error()))
 		return false
 	}
+
 	if res.ExitCode != 0 {
 		out := fmt.Appendf(nil, "exit=%d stdout=%s stderr=%s", res.ExitCode, res.Stdout, res.Stderr)
 		_ = WriteFileBytes(ctx, filepath.Join(deployDir, "bectl.err"), out)
+
 		return false
 	}
+
 	_ = WriteFileBytes(ctx, filepath.Join(deployDir, "bectl.ok"), []byte(beName+"\n"))
+
 	return true
 }
 
@@ -199,9 +283,11 @@ func validateOptions(opts Options) error {
 	if opts.VMID == "" {
 		return errors.New("upgrade: VMID is required")
 	}
+
 	if opts.StateDir == "" {
 		return errors.New("upgrade: StateDir is required")
 	}
+
 	return nil
 }
 
@@ -214,6 +300,7 @@ func newDeployID() (string, error) {
 		slog.Error("upgrade: rand.Read", "err", err)
 		return "", fmt.Errorf("upgrade: rand.Read: %w", err)
 	}
+
 	return hex.EncodeToString(buf), nil
 }
 
@@ -226,6 +313,7 @@ func writeMetadata(ctx context.Context, path string, m metadata) error {
 		slog.ErrorContext(ctx, "upgrade: marshal metadata", "err", err, "path", path)
 		return fmt.Errorf("upgrade: marshal metadata %q: %w", path, err)
 	}
+
 	return WriteFileBytes(ctx, path, data)
 }
 
@@ -238,6 +326,7 @@ func WriteFileBytes(ctx context.Context, path string, content []byte) error {
 		slog.ErrorContext(ctx, "upgrade: write file", "err", err, "path", path)
 		return fmt.Errorf("upgrade: write %q: %w", path, err)
 	}
+
 	return nil
 }
 
@@ -246,6 +335,7 @@ func clockOrDefault(c Clock) Clock {
 	if c == nil {
 		return realClock{}
 	}
+
 	return c
 }
 
@@ -253,7 +343,12 @@ func clockOrDefault(c Clock) Clock {
 // fully-populated value (exhaustruct compliance) on the error path.
 func emptyState() State {
 	return State{
-		VMID: "", DeployID: "", Target: "", Snapshot: "",
-		Phase: PhaseEmpty, UpdatedAt: time.Time{}, FailingCheck: nil,
+		VMID:         "",
+		DeployID:     "",
+		Target:       "",
+		Snapshot:     "",
+		Phase:        PhaseEmpty,
+		UpdatedAt:    time.Time{},
+		FailingCheck: nil,
 	}
 }

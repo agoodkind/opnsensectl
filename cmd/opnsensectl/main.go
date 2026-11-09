@@ -20,9 +20,13 @@ func main() {
 
 	// Boundary log: every invocation is recorded with build identity and the
 	// chosen verb, before verb-specific logger setup.
-	slog.Info("opnsensectl boundary",
-		"build", version.BuildVersionString(),
-		"subcommand", os.Args[1])
+	slog.Info(
+		"opnsensectl boundary",
+		"build",
+		version.BuildVersionString(),
+		"subcommand",
+		os.Args[1],
+	)
 
 	os.Exit(runOPNsense(os.Args[1:]))
 }

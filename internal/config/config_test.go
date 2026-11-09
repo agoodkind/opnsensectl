@@ -60,6 +60,7 @@ func writeFile(t *testing.T, dir, name, body string) string {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+
 	return path
 }
 
@@ -74,17 +75,26 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 	if cfg.Source != path {
 		t.Errorf("Source = %q, want %q", cfg.Source, path)
 	}
+
 	host := cfg.OPNsense.Host
 	if host.Upstream != "unix:///run/test-drain.sock" || host.Listen != "/run/test-bridge.sock" {
 		t.Errorf("host sockets = %q %q, want the rendered values", host.Upstream, host.Listen)
 	}
-	if host.ReconnectDuration != "3s" || host.HeartbeatIntervalDuration != "40s" || host.HeartbeatTimeoutDuration != "12s" {
-		t.Errorf("host durations = %q %q %q, want 3s 40s 12s",
-			host.ReconnectDuration, host.HeartbeatIntervalDuration, host.HeartbeatTimeoutDuration)
+
+	if host.ReconnectDuration != "3s" || host.HeartbeatIntervalDuration != "40s" ||
+		host.HeartbeatTimeoutDuration != "12s" {
+		t.Errorf(
+			"host durations = %q %q %q, want 3s 40s 12s",
+			host.ReconnectDuration,
+			host.HeartbeatIntervalDuration,
+			host.HeartbeatTimeoutDuration,
+		)
 	}
+
 	if cfg.OPNsense.Upgrade.VMID != 4242 {
 		t.Errorf("upgrade vmid = %d, want 4242", cfg.OPNsense.Upgrade.VMID)
 	}
+
 	if cfg.OPNsense.Drain.Chardev != "unix:///var/run/qemu-server/4242.mwanrpc" {
 		t.Errorf("drain chardev = %q, want the rendered value", cfg.OPNsense.Drain.Chardev)
 	}
@@ -94,16 +104,24 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 		probe.UploadChunkBytes != 16384 || probe.TransferStallDuration != "30s" {
 		t.Errorf("probe = %+v, want the defaults", probe)
 	}
+
 	upgrade := cfg.OPNsense.Upgrade
 	if upgrade.EnvGRPCTarget != "unix:///var/run/mwan-opnsense.sock" || upgrade.StateDir != "/var/lib/mwan/upgrades" ||
-		upgrade.ExecTimeoutDuration != "60m" || upgrade.UpgradeTimeoutDuration != "30m" ||
-		upgrade.PostRollbackWaitDuration != "5m" || upgrade.GCOlderThan != "168h" {
+		upgrade.ExecTimeoutDuration != "60m" ||
+		upgrade.UpgradeTimeoutDuration != "30m" ||
+		upgrade.PostRollbackWaitDuration != "5m" ||
+		upgrade.GCOlderThan != "168h" {
 		t.Errorf("upgrade = %+v, want the defaults beside the rendered vmid", upgrade)
 	}
+
 	// The validate phase pings the targets the mwan watchdog pings.
-	if upgrade.Validate.PingTargetIPv4 != "1.1.1.1" || upgrade.Validate.PingTargetIPv6 != "2606:4700:4700::1111" {
-		t.Errorf("upgrade validate ping targets = %q %q, want the watchdog's targets",
-			upgrade.Validate.PingTargetIPv4, upgrade.Validate.PingTargetIPv6)
+	if upgrade.Validate.PingTargetIPv4 != "1.1.1.1" ||
+		upgrade.Validate.PingTargetIPv6 != "2606:4700:4700::1111" {
+		t.Errorf(
+			"upgrade validate ping targets = %q %q, want the watchdog's targets",
+			upgrade.Validate.PingTargetIPv4,
+			upgrade.Validate.PingTargetIPv6,
+		)
 	}
 }
 
@@ -122,12 +140,15 @@ func TestServiceLoadFileAppliesNoDefaultsAndNoEnvironment(t *testing.T) {
 	if cfg.Source != path {
 		t.Errorf("Source = %q, want %q", cfg.Source, path)
 	}
+
 	if cfg.OPNsense.Host != (HostSection{}) {
 		t.Errorf("host = %+v, want every key empty", cfg.OPNsense.Host)
 	}
+
 	if cfg.OPNsense.Drain != (DrainSection{}) {
 		t.Errorf("drain = %+v, want every key empty", cfg.OPNsense.Drain)
 	}
+
 	if cfg.Email.SMTP2GOAPIKey != "" {
 		t.Errorf("smtp2go_api_key = %q, want the environment ignored", cfg.Email.SMTP2GOAPIKey)
 	}
@@ -151,7 +172,11 @@ func TestServiceLoadFileReadsTheRenderedHostFile(t *testing.T) {
 	if cfg.OPNsense.Host != want {
 		t.Errorf("host = %+v, want %+v", cfg.OPNsense.Host, want)
 	}
-	wantDrain := DrainSection{Chardev: "unix:///var/run/qemu-server/4242.mwanrpc", Listen: "/run/test-drain.sock"}
+
+	wantDrain := DrainSection{
+		Chardev: "unix:///var/run/qemu-server/4242.mwanrpc",
+		Listen:  "/run/test-drain.sock",
+	}
 	if cfg.OPNsense.Drain != wantDrain {
 		t.Errorf("drain = %+v, want %+v", cfg.OPNsense.Drain, wantDrain)
 	}
@@ -164,6 +189,7 @@ func TestServiceLoadFileFailsNamingAMissingFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadFile succeeded for a missing file")
 	}
+
 	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), missing) {
 		t.Errorf("error = %v, want a not-exist error naming %s", err, missing)
 	}
@@ -181,6 +207,7 @@ func TestLoadReadsTheFilePathEnvNames(t *testing.T) {
 	if cfg.Source != path {
 		t.Errorf("Source = %q, want %q", cfg.Source, path)
 	}
+
 	if cfg.OPNsense.Upgrade.VMID != 4242 {
 		t.Errorf("upgrade vmid = %d, want 4242 from the override file", cfg.OPNsense.Upgrade.VMID)
 	}
@@ -194,6 +221,7 @@ func TestLoadFailsWhenThePathEnvFileIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load succeeded for a missing override file")
 	}
+
 	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), missing) {
 		t.Errorf("error = %v, want a not-exist error naming %s", err, missing)
 	}
@@ -205,23 +233,30 @@ func TestLoadFileRejectsInvalidValues(t *testing.T) {
 		body string
 	}{
 		{name: "vmid is not an integer", body: "[opnsense.upgrade]\nvmid = \"router\"\n"},
-		{name: "upload chunk is not an integer", body: "[opnsense.probe]\nupload_chunk_bytes = \"big\"\n"},
+		{
+			name: "upload chunk is not an integer",
+			body: "[opnsense.probe]\nupload_chunk_bytes = \"big\"\n",
+		},
 		{name: "duration is not a string", body: "[opnsense.host]\nheartbeat_timeout = 10\n"},
 		{name: "boolean is not a boolean", body: "[opnsense.upgrade]\nreset_confirm = \"yes\"\n"},
 		{name: "malformed table header", body: "[opnsense.host\nlisten = \"/run/x.sock\"\n"},
 	}
 	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			path := writeFile(t, t.TempDir(), "config.toml", testCase.body)
+		t.Run(
+			testCase.name,
+			func(t *testing.T) {
+				path := writeFile(t, t.TempDir(), "config.toml", testCase.body)
 
-			_, err := loadFile(path)
-			if err == nil {
-				t.Fatal("loadFile accepted an invalid value")
-			}
-			if !strings.Contains(err.Error(), "parse "+path) {
-				t.Errorf("error = %q, want a parse error naming %s", err, path)
-			}
-		})
+				_, err := loadFile(path)
+				if err == nil {
+					t.Fatal("loadFile accepted an invalid value")
+				}
+
+				if !strings.Contains(err.Error(), "parse "+path) {
+					t.Errorf("error = %q, want a parse error naming %s", err, path)
+				}
+			},
+		)
 	}
 }
 
@@ -236,7 +271,12 @@ func TestLoadFirstPresentPrefersThePrimaryFile(t *testing.T) {
 	}
 
 	if cfg.Source != primary || cfg.OPNsense.Upgrade.VMID != 4242 {
-		t.Errorf("Source = %q vmid = %d, want %q and 4242", cfg.Source, cfg.OPNsense.Upgrade.VMID, primary)
+		t.Errorf(
+			"Source = %q vmid = %d, want %q and 4242",
+			cfg.Source,
+			cfg.OPNsense.Upgrade.VMID,
+			primary,
+		)
 	}
 }
 
@@ -253,13 +293,20 @@ func TestLoadFirstPresentReadsTheGatewayFileWhenThePrimaryIsAbsent(t *testing.T)
 	if cfg.Source != legacy {
 		t.Errorf("Source = %q, want %q", cfg.Source, legacy)
 	}
-	if cfg.OPNsense.Upgrade.VMID != 4343 || cfg.OPNsense.Drain.Chardev != "unix:///var/run/qemu-server/4343.mwanrpc" {
-		t.Errorf("vmid = %d chardev = %q, want the gateway file's values",
-			cfg.OPNsense.Upgrade.VMID, cfg.OPNsense.Drain.Chardev)
+
+	if cfg.OPNsense.Upgrade.VMID != 4343 ||
+		cfg.OPNsense.Drain.Chardev != "unix:///var/run/qemu-server/4343.mwanrpc" {
+		t.Errorf(
+			"vmid = %d chardev = %q, want the gateway file's values",
+			cfg.OPNsense.Upgrade.VMID,
+			cfg.OPNsense.Drain.Chardev,
+		)
 	}
+
 	if cfg.OPNsense.Host.Listen != "/run/legacy-bridge.sock" {
 		t.Errorf("host listen = %q, want the gateway file's value", cfg.OPNsense.Host.Listen)
 	}
+
 	if cfg.Email.AlertEmail != "alerts@example.com" {
 		t.Errorf("email alert_email = %q, want the gateway file's value", cfg.Email.AlertEmail)
 	}
@@ -321,6 +368,7 @@ func TestLoadFirstPresentDoesNotMaskABrokenPrimaryFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("loadFirstPresent read the gateway file past a broken primary file")
 	}
+
 	if !strings.Contains(err.Error(), primary) {
 		t.Errorf("error = %q, want it to name %s", err, primary)
 	}
@@ -335,6 +383,7 @@ func TestLoadFirstPresentNamesThePrimaryFileWhenNeitherExists(t *testing.T) {
 	if err == nil {
 		t.Fatal("loadFirstPresent succeeded with neither file present")
 	}
+
 	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), primary) {
 		t.Errorf("error = %v, want a not-exist error naming %s", err, primary)
 	}

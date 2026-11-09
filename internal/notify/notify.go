@@ -64,9 +64,16 @@ func NewWithMailer(
 	newMailer MailerFactory,
 ) (*Manager, error) {
 	if log == nil {
-		slog.Error("notify: construct manager failed", "err", errLogRequired, "service", serviceName)
+		slog.Error(
+			"notify: construct manager failed",
+			"err",
+			errLogRequired,
+			"service",
+			serviceName,
+		)
 		return nil, errLogRequired
 	}
+
 	manager := &Manager{
 		log:   log.With("component", "notify"),
 		sink:  nil,
@@ -76,10 +83,15 @@ func NewWithMailer(
 	apiKey := strings.TrimSpace(section.SMTP2GOAPIKey)
 	recipient := strings.TrimSpace(section.AlertEmail)
 	if apiKey == "" || recipient == "" {
-		log.Warn("notify: [email] has no smtp2go_api_key or alert_email, so alerts are logged and not mailed",
-			"service", serviceName)
+		log.Warn(
+			"notify: [email] has no smtp2go_api_key or alert_email, so alerts are logged and not mailed",
+			"service",
+			serviceName,
+		)
+
 		return manager, nil
 	}
+
 	manager.sink = &emailSink{
 		newMailer:     newMailer,
 		apiKey:        apiKey,
@@ -90,6 +102,7 @@ func NewWithMailer(
 		subjectPrefix: section.SubjectPrefix,
 		minLevel:      gklog.ParseLevel(section.MinLevel),
 	}
+
 	return manager, nil
 }
 

@@ -117,15 +117,24 @@ type guestRunner struct {
 func (r *guestRunner) run(ctx context.Context, args ...string) (GuestExecResult, error) {
 	res, err := r.exec.GuestExec(ctx, r.vmid, args...)
 	if r.logPath != "" {
-		r.log = fmt.Appendf(r.log, "argv=%v\nexit=%d\nerr=%v\nstdout:\n%s\nstderr:\n%s\n",
-			args, res.ExitCode, err, res.Stdout, res.Stderr)
+		r.log = fmt.Appendf(
+			r.log,
+			"argv=%v\nexit=%d\nerr=%v\nstdout:\n%s\nstderr:\n%s\n",
+			args,
+			res.ExitCode,
+			err,
+			res.Stdout,
+			res.Stderr,
+		)
 		if writeErr := WriteFileBytes(ctx, r.logPath, r.log); writeErr != nil {
 			slog.WarnContext(ctx, "upgrade: write upgrade.log failed", "err", writeErr)
 		}
 	}
+
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", strings.Join(args, " "), err)
 	}
+
 	return res, nil
 }
 
@@ -134,16 +143,41 @@ func (r *guestRunner) output(ctx context.Context, args ...string) (string, error
 	command := strings.Join(args, " ")
 	res, err := r.run(ctx, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "upgrade: guest command failed",
-			"err", err, "vmid", r.vmid, "command", command)
+		slog.ErrorContext(
+			ctx,
+			"upgrade: guest command failed",
+			"err",
+			err,
+			"vmid",
+			r.vmid,
+			"command",
+			command,
+		)
+
 		return "", err
 	}
+
 	if res.ExitCode != 0 {
-		exitErr := fmt.Errorf("%s: exit=%d stderr=%s", command, res.ExitCode, strings.TrimSpace(res.Stderr))
-		slog.ErrorContext(ctx, "upgrade: guest command non-zero exit",
-			"err", exitErr, "vmid", r.vmid, "exit", res.ExitCode)
+		exitErr := fmt.Errorf(
+			"%s: exit=%d stderr=%s",
+			command,
+			res.ExitCode,
+			strings.TrimSpace(res.Stderr),
+		)
+		slog.ErrorContext(
+			ctx,
+			"upgrade: guest command non-zero exit",
+			"err",
+			exitErr,
+			"vmid",
+			r.vmid,
+			"exit",
+			res.ExitCode,
+		)
+
 		return "", exitErr
 	}
+
 	return strings.TrimSpace(res.Stdout), nil
 }
 
@@ -153,12 +187,21 @@ func (r *guestRunner) value(ctx context.Context, args ...string) (string, error)
 	if err != nil {
 		return "", err
 	}
+
 	if out == "" {
 		emptyErr := fmt.Errorf("%s: empty output", strings.Join(args, " "))
-		slog.ErrorContext(ctx, "upgrade: guest command printed nothing",
-			"err", emptyErr, "vmid", r.vmid)
+		slog.ErrorContext(
+			ctx,
+			"upgrade: guest command printed nothing",
+			"err",
+			emptyErr,
+			"vmid",
+			r.vmid,
+		)
+
 		return "", emptyErr
 	}
+
 	return out, nil
 }
 
@@ -172,18 +215,22 @@ func captureFirmwareState(ctx context.Context, r *guestRunner) (firmwareState, e
 	if err != nil {
 		return emptyFirmwareState(), err
 	}
+
 	coreVersion, err := r.value(ctx, guestPkg, "query", "%v", corePackage)
 	if err != nil {
 		return emptyFirmwareState(), err
 	}
+
 	baseVersion, err := r.value(ctx, guestUpdater, "-vb")
 	if err != nil {
 		return emptyFirmwareState(), err
 	}
+
 	kernelVersion, err := r.value(ctx, guestUpdater, "-vk")
 	if err != nil {
 		return emptyFirmwareState(), err
 	}
+
 	return firmwareState{
 		CorePackage:   corePackage,
 		CoreVersion:   coreVersion,
@@ -197,21 +244,45 @@ func captureFirmwareState(ctx context.Context, r *guestRunner) (firmwareState, e
 // aborts prepare before the snapshot.
 func captureFirmware(ctx context.Context, deps Deps, opts Options, deployDir string) error {
 	if deps.Exec == nil {
-		slog.ErrorContext(ctx, "upgrade.Prepare: capture firmware: deps.Exec missing",
-			"err", errCaptureExecMissing)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture firmware: deps.Exec missing",
+			"err",
+			errCaptureExecMissing,
+		)
+
 		return errCaptureExecMissing
 	}
+
 	runner := &guestRunner{exec: deps.Exec, vmid: opts.VMID, logPath: "", log: nil}
 	state, err := captureFirmwareState(ctx, runner)
 	if err != nil {
 		return fmt.Errorf("upgrade.Prepare: capture firmware: %w", err)
 	}
-	if err := writeFirmwareState(ctx, filepath.Join(deployDir, ArtefactFirmwarePre), state); err != nil {
+
+	if err := writeFirmwareState(
+		ctx,
+		filepath.Join(deployDir, ArtefactFirmwarePre),
+		state,
+	); err != nil {
 		return fmt.Errorf("upgrade.Prepare: write firmware state: %w", err)
 	}
-	slog.InfoContext(ctx, "upgrade.Prepare: captured firmware state",
-		"vmid", opts.VMID, "core_package", state.CorePackage, "core_version", state.CoreVersion,
-		"base_version", state.BaseVersion, "kernel_version", state.KernelVersion)
+
+	slog.InfoContext(
+		ctx,
+		"upgrade.Prepare: captured firmware state",
+		"vmid",
+		opts.VMID,
+		"core_package",
+		state.CorePackage,
+		"core_version",
+		state.CoreVersion,
+		"base_version",
+		state.BaseVersion,
+		"kernel_version",
+		state.KernelVersion,
+	)
+
 	return nil
 }
 
@@ -219,10 +290,16 @@ func captureFirmware(ctx context.Context, deps Deps, opts Options, deployDir str
 // A Target in another release series than the installed core package is
 // a major upgrade; any other Target, including none, applies the updates
 // pending inside the installed series.
-func planFirmwareChange(ctx context.Context, r *guestRunner, pre firmwareState, opts Options) (firmwarePlan, error) {
+func planFirmwareChange(
+	ctx context.Context,
+	r *guestRunner,
+	pre firmwareState,
+	opts Options,
+) (firmwarePlan, error) {
 	if isMajorUpgrade(opts.Target, pre.CoreVersion) {
 		return majorPlan(pre, opts), nil
 	}
+
 	return probeUpdatePlan(ctx, r, pre, opts)
 }
 
@@ -254,26 +331,36 @@ func majorPlan(pre firmwareState, opts Options) firmwarePlan {
 // (check.sh:309-318). A reboot is needed when base or kernel change, or
 // when the always-reboot setting is on and packages change
 // (update.sh:47,72-82).
-func probeUpdatePlan(ctx context.Context, r *guestRunner, pre firmwareState, opts Options) (firmwarePlan, error) {
+func probeUpdatePlan(
+	ctx context.Context,
+	r *guestRunner,
+	pre firmwareState,
+	opts Options,
+) (firmwarePlan, error) {
 	if _, err := r.output(ctx, guestPkg, "update"); err != nil {
 		return emptyFirmwarePlan(), err
 	}
+
 	coreAvailable, err := r.value(ctx, guestPkg, "rquery", "%v", pre.CorePackage)
 	if err != nil {
 		return emptyFirmwarePlan(), err
 	}
+
 	order, err := r.value(ctx, guestPkg, "version", "-t", pre.CoreVersion, coreAvailable)
 	if err != nil {
 		return emptyFirmwarePlan(), err
 	}
+
 	updaterAvailable, err := r.value(ctx, guestPkg, "rquery", "%v", updaterPackage)
 	if err != nil {
 		return emptyFirmwarePlan(), err
 	}
+
 	alwaysReboot, err := readAlwaysReboot(ctx, r)
 	if err != nil {
 		return emptyFirmwarePlan(), err
 	}
+
 	setsAvailable := stripPackageRevision(updaterAvailable)
 	plan := firmwarePlan{
 		Mode:           firmwareModeUpdate,
@@ -288,7 +375,9 @@ func probeUpdatePlan(ctx context.Context, r *guestRunner, pre firmwareState, opt
 		AlwaysReboot:   alwaysReboot,
 		RebootRequired: false,
 	}
-	plan.RebootRequired = plan.BasePending || plan.KernelPending || (plan.AlwaysReboot && plan.CorePending)
+	plan.RebootRequired = plan.BasePending || plan.KernelPending ||
+		(plan.AlwaysReboot && plan.CorePending)
+
 	return plan, nil
 }
 
@@ -301,15 +390,21 @@ func readAlwaysReboot(ctx context.Context, r *guestRunner) (bool, error) {
 		slog.ErrorContext(ctx, "upgrade: read reboot setting failed", "err", err, "vmid", r.vmid)
 		return false, err
 	}
+
 	return strings.TrimSpace(res.Stdout) == settingEnabled, nil
 }
 
 // applyFirmwareChange applies the plan. It never reboots; the caller
 // reboots when the result says a reboot is required.
-func applyFirmwareChange(ctx context.Context, r *guestRunner, plan firmwarePlan) (firmwareResult, error) {
+func applyFirmwareChange(
+	ctx context.Context,
+	r *guestRunner,
+	plan firmwarePlan,
+) (firmwareResult, error) {
 	if plan.Mode == firmwareModeMajor {
 		return applyMajorUpgrade(ctx, r, plan)
 	}
+
 	return applyPendingUpdate(ctx, r, plan)
 }
 
@@ -317,14 +412,20 @@ func applyFirmwareChange(ctx context.Context, r *guestRunner, plan firmwarePlan)
 // -u fetches the package, base, and kernel sets and stages them for the
 // next boot, then asks for a reboot (opnsense-update.sh.in:385-387,
 // 403-409, 1125-1179, 1240-1242).
-func applyMajorUpgrade(ctx context.Context, r *guestRunner, plan firmwarePlan) (firmwareResult, error) {
+func applyMajorUpgrade(
+	ctx context.Context,
+	r *guestRunner,
+	plan firmwarePlan,
+) (firmwareResult, error) {
 	result := emptyFirmwareResult()
 	if _, err := r.output(ctx, guestUpdater, "-u", "-r", plan.Target); err != nil {
 		return result, err
 	}
+
 	result.SetsApplied = true
 	result.SetsRelease = plan.Target
 	result.RebootRequired = true
+
 	return result, nil
 }
 
@@ -336,7 +437,11 @@ func applyMajorUpgrade(ctx context.Context, r *guestRunner, plan firmwarePlan) (
 // from the installed one and 1 otherwise (opnsense-update.sh.in:686-728),
 // and installing base or kernel outside a major upgrade requires a
 // reboot (update.sh:72-76).
-func applyPendingUpdate(ctx context.Context, r *guestRunner, plan firmwarePlan) (firmwareResult, error) {
+func applyPendingUpdate(
+	ctx context.Context,
+	r *guestRunner,
+	plan firmwarePlan,
+) (firmwareResult, error) {
 	result := emptyFirmwareResult()
 	packagesBefore := ""
 	if plan.AlwaysReboot {
@@ -344,38 +449,47 @@ func applyPendingUpdate(ctx context.Context, r *guestRunner, plan firmwarePlan) 
 		if err != nil {
 			return result, err
 		}
+
 		packagesBefore = listing
 	}
+
 	_, updateErr := r.output(ctx, guestUpdater, "-p", "-t", plan.Installed.CorePackage)
 	restartWebGUI(ctx, r)
 	if updateErr != nil {
 		return result, updateErr
 	}
+
 	check, err := r.run(ctx, guestUpdater, "-bk", "-c")
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade: base and kernel check failed", "err", err, "vmid", r.vmid)
 		return result, err
 	}
+
 	if check.ExitCode == 0 {
 		release, err := r.value(ctx, guestUpdater, "-v")
 		if err != nil {
 			return result, err
 		}
+
 		if _, err := r.output(ctx, guestUpdater, "-bk"); err != nil {
 			return result, err
 		}
+
 		result.SetsApplied = true
 		result.SetsRelease = release
 		result.RebootRequired = true
 	}
+
 	if plan.AlwaysReboot {
 		packagesAfter, err := r.output(ctx, guestPkg, "query", "%n-%v")
 		if err != nil {
 			return result, err
 		}
+
 		result.PackagesChanged = packagesAfter != packagesBefore
 		result.RebootRequired = result.RebootRequired || result.PackagesChanged
 	}
+
 	return result, nil
 }
 
@@ -385,8 +499,16 @@ func applyPendingUpdate(ctx context.Context, r *guestRunner, plan firmwarePlan) 
 func restartWebGUI(ctx context.Context, r *guestRunner) {
 	res, err := r.run(ctx, guestWebGUI)
 	if err != nil || res.ExitCode != 0 {
-		slog.WarnContext(ctx, "upgrade: web GUI restart did not exit cleanly",
-			"err", err, "vmid", r.vmid, "exit", res.ExitCode)
+		slog.WarnContext(
+			ctx,
+			"upgrade: web GUI restart did not exit cleanly",
+			"err",
+			err,
+			"vmid",
+			r.vmid,
+			"exit",
+			res.ExitCode,
+		)
 	}
 }
 
@@ -400,23 +522,35 @@ func verifyFirmware(plan firmwarePlan, result firmwareResult) error {
 	post := result.Post
 	if plan.Mode == firmwareModeMajor {
 		if releaseSeries(post.CoreVersion) != releaseSeries(plan.Target) {
-			problems = append(problems, fmt.Sprintf("core %s is not on release %s", post.CoreVersion, plan.Target))
+			problems = append(
+				problems,
+				fmt.Sprintf("core %s is not on release %s", post.CoreVersion, plan.Target),
+			)
 		}
+
 		return problemsError(problems)
 	}
+
 	if plan.CorePending && post.CoreVersion != plan.CoreAvailable {
-		problems = append(problems, fmt.Sprintf("core %s, want %s", post.CoreVersion, plan.CoreAvailable))
+		problems = append(
+			problems,
+			fmt.Sprintf("core %s, want %s", post.CoreVersion, plan.CoreAvailable),
+		)
 	}
+
 	wantSets := plan.SetsAvailable
 	if result.SetsApplied {
 		wantSets = result.SetsRelease
 	}
+
 	if (plan.BasePending || result.SetsApplied) && post.BaseVersion != wantSets {
 		problems = append(problems, fmt.Sprintf("base %s, want %s", post.BaseVersion, wantSets))
 	}
+
 	if (plan.KernelPending || result.SetsApplied) && post.KernelVersion != wantSets {
 		problems = append(problems, fmt.Sprintf("kernel %s, want %s", post.KernelVersion, wantSets))
 	}
+
 	return problemsError(problems)
 }
 
@@ -424,6 +558,7 @@ func problemsError(problems []string) error {
 	if len(problems) == 0 {
 		return nil
 	}
+
 	return errors.New("pending change not applied: " + strings.Join(problems, "; "))
 }
 
@@ -433,6 +568,7 @@ func isMajorUpgrade(target, coreVersion string) bool {
 	if target == "" {
 		return false
 	}
+
 	return releaseSeries(target) != releaseSeries(coreVersion)
 }
 
@@ -444,6 +580,7 @@ func releaseSeries(version string) string {
 	if len(parts) < 2 {
 		return parts[0]
 	}
+
 	return parts[0] + "." + parts[1]
 }
 
@@ -461,6 +598,7 @@ func writeFirmwareState(ctx context.Context, path string, state firmwareState) e
 		slog.ErrorContext(ctx, "upgrade: marshal firmware state", "err", err, "path", path)
 		return fmt.Errorf("upgrade: marshal firmware state %q: %w", path, err)
 	}
+
 	return WriteFileBytes(ctx, path, data)
 }
 
@@ -470,6 +608,7 @@ func writeFirmwarePlan(ctx context.Context, path string, plan firmwarePlan) erro
 		slog.ErrorContext(ctx, "upgrade: marshal firmware plan", "err", err, "path", path)
 		return fmt.Errorf("upgrade: marshal firmware plan %q: %w", path, err)
 	}
+
 	return WriteFileBytes(ctx, path, data)
 }
 
@@ -479,6 +618,7 @@ func writeFirmwareResult(ctx context.Context, path string, result firmwareResult
 		slog.ErrorContext(ctx, "upgrade: marshal firmware result", "err", err, "path", path)
 		return fmt.Errorf("upgrade: marshal firmware result %q: %w", path, err)
 	}
+
 	return WriteFileBytes(ctx, path, data)
 }
 
@@ -489,11 +629,13 @@ func readFirmwareState(ctx context.Context, path string) (firmwareState, error) 
 		slog.ErrorContext(ctx, "upgrade: read firmware state", "err", err, "path", clean)
 		return emptyFirmwareState(), fmt.Errorf("upgrade: read firmware state %q: %w", clean, err)
 	}
+
 	var state firmwareState
 	if err := json.Unmarshal(data, &state); err != nil {
 		slog.ErrorContext(ctx, "upgrade: parse firmware state", "err", err, "path", clean)
 		return emptyFirmwareState(), fmt.Errorf("upgrade: parse firmware state %q: %w", clean, err)
 	}
+
 	return state, nil
 }
 
@@ -503,15 +645,26 @@ func emptyFirmwareState() firmwareState {
 
 func emptyFirmwarePlan() firmwarePlan {
 	return firmwarePlan{
-		Mode: "", Target: "", DryRun: false, Installed: emptyFirmwareState(),
-		CoreAvailable: "", CorePending: false, SetsAvailable: "",
-		BasePending: false, KernelPending: false, AlwaysReboot: false, RebootRequired: false,
+		Mode:           "",
+		Target:         "",
+		DryRun:         false,
+		Installed:      emptyFirmwareState(),
+		CoreAvailable:  "",
+		CorePending:    false,
+		SetsAvailable:  "",
+		BasePending:    false,
+		KernelPending:  false,
+		AlwaysReboot:   false,
+		RebootRequired: false,
 	}
 }
 
 func emptyFirmwareResult() firmwareResult {
 	return firmwareResult{
-		SetsApplied: false, SetsRelease: "", PackagesChanged: false,
-		RebootRequired: false, Post: emptyFirmwareState(),
+		SetsApplied:     false,
+		SetsRelease:     "",
+		PackagesChanged: false,
+		RebootRequired:  false,
+		Post:            emptyFirmwareState(),
 	}
 }

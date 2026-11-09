@@ -33,7 +33,10 @@ func upgradeUsage(out *os.File) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Phases: prepare, execute, validate, rollback, commit, run, gc, reset")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] and [email] in "+opnsensecfg.DefaultPath+".")
+	fmt.Fprintln(
+		out,
+		"Every input comes from [opnsense.upgrade] and [email] in "+opnsensecfg.DefaultPath+".",
+	)
 }
 
 func runOPNsenseUpgradeCmd(args []string) int {
@@ -41,16 +44,19 @@ func runOPNsenseUpgradeCmd(args []string) int {
 		upgradeUsage(os.Stderr)
 		return 2
 	}
+
 	verb := upgradePhase(args[0])
 	rest := args[1:]
 	if len(rest) > 0 && (rest[0] == "-h" || rest[0] == "--help" || rest[0] == "help") {
 		upgradeUsage(os.Stdout)
 		return 0
 	}
+
 	if len(rest) > 0 {
 		fmt.Fprintf(os.Stderr, "mwan opnsense upgrade %s: unexpected arguments: %v\n", verb, rest)
 		return 2
 	}
+
 	switch verb {
 	case upgradePhasePrepare,
 		upgradePhaseExecute,
@@ -65,6 +71,7 @@ func runOPNsenseUpgradeCmd(args []string) int {
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense upgrade: unknown phase %q\n", string(verb))
 		upgradeUsage(os.Stderr)
+
 		return 2
 	}
 }
@@ -104,6 +111,7 @@ func buildRedial(target string) func() (upgrade.OPNsenseRPCClient, error) {
 			slog.Error("opnsense upgrade: redial", "err", err, "target", target)
 			return nil, fmt.Errorf("dial %s: %w", target, err)
 		}
+
 		return c.RPC(), nil
 	}
 }
@@ -114,34 +122,58 @@ func resolveUpgradeInputs() (upgradeInputs, error) {
 	if err != nil {
 		return ui, err
 	}
+
 	vmid, err := requireUpgradeVMID(cfg)
 	if err != nil {
 		return ui, err
 	}
+
 	stateDir, err := requireUpgradeStateDir(cfg)
 	if err != nil {
 		return ui, err
 	}
+
 	grpcTarget, err := requireUpgradeGRPCTarget(cfg)
 	if err != nil {
 		return ui, err
 	}
-	execTimeout, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.ExecTimeoutDuration, "[opnsense.upgrade].exec_timeout")
+
+	execTimeout, err := parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Upgrade.ExecTimeoutDuration,
+		"[opnsense.upgrade].exec_timeout",
+	)
 	if err != nil {
 		return ui, err
 	}
-	upgradeTimeout, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.UpgradeTimeoutDuration, "[opnsense.upgrade].upgrade_timeout")
+
+	upgradeTimeout, err := parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Upgrade.UpgradeTimeoutDuration,
+		"[opnsense.upgrade].upgrade_timeout",
+	)
 	if err != nil {
 		return ui, err
 	}
-	postRollbackWait, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.PostRollbackWaitDuration, "[opnsense.upgrade].post_rollback_wait")
+
+	postRollbackWait, err := parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Upgrade.PostRollbackWaitDuration,
+		"[opnsense.upgrade].post_rollback_wait",
+	)
 	if err != nil {
 		return ui, err
 	}
-	gcOlderThan, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.GCOlderThan, "[opnsense.upgrade].gc_older_than")
+
+	gcOlderThan, err := parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Upgrade.GCOlderThan,
+		"[opnsense.upgrade].gc_older_than",
+	)
 	if err != nil {
 		return ui, err
 	}
+
 	ui = upgradeInputs{
 		VMID:               vmid,
 		StateDir:           stateDir,
@@ -160,6 +192,7 @@ func resolveUpgradeInputs() (upgradeInputs, error) {
 		PingTargetIPv6:     cfg.OPNsense.Upgrade.Validate.PingTargetIPv6,
 		Email:              cfg.Email,
 	}
+
 	return ui, nil
 }
 
@@ -191,6 +224,7 @@ func buildDaemonDialer(target string) upgrade.DaemonDialer {
 			slog.ErrorContext(ctx, "opnsense upgrade: validate dial", "err", err, "target", target)
 			return nil, nil, fmt.Errorf("dial %s: %w", target, err)
 		}
+
 		return client.RPC(), client.Close, nil
 	}
 }
@@ -206,6 +240,7 @@ func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 		slog.Error("opnsense upgrade: build alert notifier", "err", err)
 		return upgrade.Deps{}, fmt.Errorf("build alert notifier: %w", err)
 	}
+
 	snapshotter := upgrade.NewQmSnapshotter(logger)
 
 	rpcCli, err := opnsense.Dial(ui.GRPCTarget)
@@ -213,6 +248,7 @@ func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 		slog.Error("opnsense upgrade: dial", "err", err, "target", ui.GRPCTarget)
 		return upgrade.Deps{}, fmt.Errorf("dial %s: %w", ui.GRPCTarget, err)
 	}
+
 	target := ui.GRPCTarget
 	redial := buildRedial(target)
 	exec := &upgrade.GRPCExecutor{
@@ -220,10 +256,15 @@ func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(ui.ExecTimeout),
 		Redial:             redial,
 	}
+
 	return upgrade.Deps{
-		Snap:     snapshotter,
-		Exec:     exec,
-		Validate: upgrade.NewHealthValidator(buildDaemonDialer(target), ui.PingTargetIPv4, ui.PingTargetIPv6),
+		Snap: snapshotter,
+		Exec: exec,
+		Validate: upgrade.NewHealthValidator(
+			buildDaemonDialer(target),
+			ui.PingTargetIPv4,
+			ui.PingTargetIPv6,
+		),
 		Notifier: notifier,
 		Clock:    nil,
 		Log:      logger,
@@ -234,11 +275,13 @@ func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 	if d <= 0 {
 		return 0
 	}
+
 	rounded := (d + time.Second - 1) / time.Second
 	const int32Max = int32(2147483647)
 	if rounded > time.Duration(int32Max) {
 		return int32Max
 	}
+
 	return int32(rounded)
 }
 
@@ -247,10 +290,12 @@ func runUpgradePhase(phase upgradePhase) int {
 	if err != nil {
 		return printAndExit("upgrade "+string(phase), err)
 	}
+
 	deps, err := buildUpgradeDeps(ui)
 	if err != nil {
 		return printAndExit("upgrade "+string(phase), err)
 	}
+
 	ctx := context.Background()
 	opts := ui.toOptions()
 	switch phase {
@@ -259,12 +304,20 @@ func runUpgradePhase(phase upgradePhase) int {
 		if err != nil {
 			return printAndExit("upgrade prepare", err)
 		}
-		fmt.Fprintf(os.Stdout, "phase=%s deploy_id=%s snapshot=%s\n", st.Phase, st.DeployID, st.Snapshot)
+
+		fmt.Fprintf(
+			os.Stdout,
+			"phase=%s deploy_id=%s snapshot=%s\n",
+			st.Phase,
+			st.DeployID,
+			st.Snapshot,
+		)
 	case upgradePhaseExecute:
 		st, err := upgrade.Execute(ctx, deps, opts)
 		if err != nil {
 			return printAndExit("upgrade execute", err)
 		}
+
 		fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
 	case upgradePhaseValidate:
 		return runUpgradeValidatePhase(ctx, deps, opts)
@@ -273,18 +326,21 @@ func runUpgradePhase(phase upgradePhase) int {
 		if err != nil {
 			return printAndExit("upgrade rollback", err)
 		}
+
 		fmt.Fprintf(os.Stdout, "phase=%s snapshot=%s\n", st.Phase, st.Snapshot)
 	case upgradePhaseCommit:
 		st, err := upgrade.Commit(ctx, deps, opts)
 		if err != nil {
 			return printAndExit("upgrade commit", err)
 		}
+
 		fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
 	case upgradePhaseRun:
 		out, err := upgrade.Run(ctx, deps, opts)
 		if err != nil {
 			return printAndExit("upgrade run", err)
 		}
+
 		fmt.Fprintf(os.Stdout, "reached=%s auto_rollback=%t\n", out.Reached, out.AutoRollback)
 	case upgradePhaseReset:
 		// runUpgradePhase never receives upgradePhaseReset; the outer
@@ -296,11 +352,17 @@ func runUpgradePhase(phase upgradePhase) int {
 		if err != nil {
 			return printAndExit("upgrade gc", err)
 		}
-		fmt.Fprintf(os.Stdout, "deleted=%s skipped=%s\n",
-			strings.Join(res.Deleted, ","), strings.Join(res.Skipped, ","))
+
+		fmt.Fprintf(
+			os.Stdout,
+			"deleted=%s skipped=%s\n",
+			strings.Join(res.Deleted, ","),
+			strings.Join(res.Skipped, ","),
+		)
 	default:
 		return printAndExit("upgrade", fmt.Errorf("internal: unhandled phase %q", phase))
 	}
+
 	return 0
 }
 
@@ -311,8 +373,16 @@ func runUpgradeValidatePhase(ctx context.Context, deps upgrade.Deps, opts upgrad
 	if err != nil {
 		return printAndExit("upgrade validate", err)
 	}
-	fmt.Fprintf(os.Stdout, "phase=%s all_pass=%t partial=%t failing=%s\n",
-		st.Phase, res.AllPass, res.Partial, strings.Join(st.FailingCheck, ","))
+
+	fmt.Fprintf(
+		os.Stdout,
+		"phase=%s all_pass=%t partial=%t failing=%s\n",
+		st.Phase,
+		res.AllPass,
+		res.Partial,
+		strings.Join(st.FailingCheck, ","),
+	)
+
 	return 0
 }
 
@@ -327,6 +397,7 @@ func runUpgradeReset() int {
 	if err != nil {
 		return printAndExit("upgrade reset", err)
 	}
+
 	// Reset only needs the Snapshotter, not the validator or executor.
 	deps := upgrade.Deps{
 		Snap:     upgrade.NewQmSnapshotter(slog.Default()),
@@ -336,28 +407,41 @@ func runUpgradeReset() int {
 		Clock:    nil,
 		Log:      slog.Default(),
 	}
-	plan, err := upgrade.Reset(context.Background(), deps, upgrade.ResetOptions{
-		VMID:     ui.VMID,
-		StateDir: ui.StateDir,
-		DeployID: "",
-	})
+	plan, err := upgrade.Reset(
+		context.Background(),
+		deps,
+		upgrade.ResetOptions{
+			VMID:     ui.VMID,
+			StateDir: ui.StateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		return printAndExit("upgrade reset", err)
 	}
+
 	if plan.NothingToDo {
 		fmt.Fprintln(os.Stdout, "nothing to do")
 		return 0
 	}
+
 	if !ui.ResetConfirm {
 		printResetPlan(os.Stdout, plan)
 		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "set [opnsense.upgrade].reset_confirm = true in the opnsense config to apply.")
+		fmt.Fprintln(
+			os.Stdout,
+			"set [opnsense.upgrade].reset_confirm = true in the opnsense config to apply.",
+		)
+
 		return 2
 	}
+
 	if err := upgrade.ResetExecute(context.Background(), deps, plan); err != nil {
 		return printAndExit("upgrade reset", err)
 	}
+
 	fmt.Fprintln(os.Stdout, "reset complete")
+
 	return 0
 }
 
@@ -367,15 +451,18 @@ func printResetPlan(w *os.File, plan upgrade.Plan) {
 		fmt.Fprintln(w, "  snapshots to delete: (none)")
 	} else {
 		fmt.Fprintln(w, "  snapshots to delete:")
+
 		for _, s := range plan.SnapshotsToDelete {
 			fmt.Fprintf(w, "    - %s\n", s)
 		}
 	}
+
 	if plan.RollbackTarget == "" {
 		fmt.Fprintln(w, "  rollback target: (none)")
 	} else {
 		fmt.Fprintf(w, "  rollback target: %s\n", plan.RollbackTarget)
 	}
+
 	if plan.StatePath == "" {
 		fmt.Fprintln(w, "  state.json to remove: (none)")
 	} else {

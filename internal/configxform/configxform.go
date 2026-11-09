@@ -36,6 +36,7 @@ func Apply(input []byte, subs Substitutions) ([]byte, error) {
 	if len(input) == 0 {
 		err := errors.New("configxform.Apply: empty input")
 		slog.Error("configxform: apply rejected empty input", "err", err)
+
 		return nil, err
 	}
 
@@ -49,14 +50,17 @@ func Apply(input []byte, subs Substitutions) ([]byte, error) {
 		slog.Error("configxform: apply device names failed", "err", err)
 		return nil, fmt.Errorf("configxform.Apply: device names: %w", err)
 	}
+
 	if err := applyXPathSets(doc, subs.XPathSets); err != nil {
 		slog.Error("configxform: apply xpath sets failed", "err", err)
 		return nil, fmt.Errorf("configxform.Apply: xpath sets: %w", err)
 	}
+
 	if err := applyElementRemoves(doc, subs.RemoveElements); err != nil {
 		slog.Error("configxform: apply element removes failed", "err", err)
 		return nil, fmt.Errorf("configxform.Apply: remove elements: %w", err)
 	}
+
 	if err := applyInsertElements(doc, subs.InsertElements); err != nil {
 		slog.Error("configxform: apply insert elements failed", "err", err)
 		return nil, fmt.Errorf("configxform.Apply: insert elements: %w", err)
@@ -69,6 +73,7 @@ func Apply(input []byte, subs Substitutions) ([]byte, error) {
 	}
 
 	out = applyTextLiterals(out, subs.TextLiterals)
+
 	return out, nil
 }
 
@@ -81,23 +86,28 @@ func applyDeviceNames(doc *etree.Document, mappings []DeviceNameMapping) error {
 	if len(mappings) == 0 {
 		return nil
 	}
+
 	root := doc.FindElement("//opnsense")
 	if root == nil {
 		return errors.New("applyDeviceNames: no <opnsense> root")
 	}
+
 	ifElems := root.FindElements(".//if")
+
 	for _, mapping := range mappings {
 		from := strings.TrimSpace(mapping.From)
 		to := strings.TrimSpace(mapping.To)
 		if from == "" || to == "" {
 			return fmt.Errorf("applyDeviceNames: empty from or to in mapping %+v", mapping)
 		}
+
 		for _, el := range ifElems {
 			if strings.TrimSpace(el.Text()) == from {
 				el.SetText(to)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -111,11 +121,13 @@ func applyXPathSets(doc *etree.Document, sets []XPathSet) error {
 		if set.XPath == "" {
 			return fmt.Errorf("applyXPathSets: empty xpath for entry %q", set.Name)
 		}
+
 		matches := doc.FindElements(set.XPath)
 		for _, el := range matches {
 			el.SetText(set.NewValue)
 		}
 	}
+
 	return nil
 }
 
@@ -127,15 +139,18 @@ func applyElementRemoves(doc *etree.Document, removes []ElementRemove) error {
 		if remove.XPath == "" {
 			return fmt.Errorf("applyElementRemoves: empty xpath for entry %q", remove.Name)
 		}
+
 		matches := doc.FindElements(remove.XPath)
 		for _, el := range matches {
 			parent := el.Parent()
 			if parent == nil {
 				continue
 			}
+
 			parent.RemoveChild(el)
 		}
 	}
+
 	return nil
 }
 
@@ -148,30 +163,69 @@ func applyInsertElements(doc *etree.Document, inserts []ElementInsert) error {
 	for _, ins := range inserts {
 		if ins.ParentXPath == "" {
 			err := fmt.Errorf("applyInsertElements: empty parent_xpath for entry %q", ins.Name)
-			slog.Error("configxform: insert element rejected empty parent_xpath", "name", ins.Name, "err", err)
+			slog.Error(
+				"configxform: insert element rejected empty parent_xpath",
+				"name",
+				ins.Name,
+				"err",
+				err,
+			)
+
 			return err
 		}
+
 		if strings.TrimSpace(ins.XML) == "" {
 			err := fmt.Errorf("applyInsertElements: empty xml for entry %q", ins.Name)
-			slog.Error("configxform: insert element rejected empty xml", "name", ins.Name, "err", err)
+			slog.Error(
+				"configxform: insert element rejected empty xml",
+				"name",
+				ins.Name,
+				"err",
+				err,
+			)
+
 			return err
 		}
+
 		parents := doc.FindElements(ins.ParentXPath)
 		for _, parent := range parents {
 			frag := etree.NewDocument()
 			if err := frag.ReadFromString(ins.XML); err != nil {
-				slog.Error("configxform: insert element xml fragment parse failed", "name", ins.Name, "err", err)
-				return fmt.Errorf("applyInsertElements: parse xml fragment for %q: %w", ins.Name, err)
+				slog.Error(
+					"configxform: insert element xml fragment parse failed",
+					"name",
+					ins.Name,
+					"err",
+					err,
+				)
+				return fmt.Errorf(
+					"applyInsertElements: parse xml fragment for %q: %w",
+					ins.Name,
+					err,
+				)
 			}
+
 			root := frag.Root()
 			if root == nil {
-				err := fmt.Errorf("applyInsertElements: xml fragment for %q has no root element", ins.Name)
-				slog.Error("configxform: insert element xml fragment has no root", "name", ins.Name, "err", err)
+				err := fmt.Errorf(
+					"applyInsertElements: xml fragment for %q has no root element",
+					ins.Name,
+				)
+				slog.Error(
+					"configxform: insert element xml fragment has no root",
+					"name",
+					ins.Name,
+					"err",
+					err,
+				)
+
 				return err
 			}
+
 			parent.AddChild(root.Copy())
 		}
 	}
+
 	return nil
 }
 
@@ -188,12 +242,16 @@ func applyTextLiterals(input []byte, literals []TextLiteral) []byte {
 	if len(literals) == 0 {
 		return input
 	}
+
 	out := input
+
 	for _, literal := range literals {
 		if literal.From == "" {
 			continue
 		}
+
 		out = bytes.ReplaceAll(out, []byte(literal.From), []byte(literal.To))
 	}
+
 	return out
 }

@@ -23,6 +23,7 @@ func (m *recordingMailer) Send(_ context.Context, message mailer.Message) error 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.messages = append(m.messages, message)
+
 	return nil
 }
 
@@ -39,23 +40,34 @@ func TestNotifyMailsAnAlertWhoseFieldsIncludeAnEmptyKey(t *testing.T) {
 		BindIface:     "",
 		MinLevel:      "ERROR",
 	}
-	manager, err := notify.NewWithMailer(section, slog.New(slog.DiscardHandler), "mwan-opnsense-upgrade",
-		func(mailer.Config) notify.Mailer { return recorder })
+	manager, err := notify.NewWithMailer(
+		section,
+		slog.New(slog.DiscardHandler),
+		"mwan-opnsense-upgrade",
+		func(mailer.Config) notify.Mailer { return recorder },
+	)
 	if err != nil {
 		t.Fatalf("NewWithMailer: %v", err)
 	}
 
-	manager.Notify(context.Background(), notify.Event{
-		Level:   slog.LevelError,
-		Kind:    "opnsense-upgrade-execute",
-		Key:     "101",
-		Message: "opnsense-upgrade execute: apply update failed",
-		Fields:  []slog.Attr{{Key: "", Value: slog.StringValue("orphan")}, slog.String("vmid", "101")},
-	})
+	manager.Notify(
+		context.Background(),
+		notify.Event{
+			Level:   slog.LevelError,
+			Kind:    "opnsense-upgrade-execute",
+			Key:     "101",
+			Message: "opnsense-upgrade execute: apply update failed",
+			Fields: []slog.Attr{
+				{Key: "", Value: slog.StringValue("orphan")},
+				slog.String("vmid", "101"),
+			},
+		},
+	)
 
 	if len(recorder.messages) != 1 {
 		t.Fatalf("mailed %d messages, want 1", len(recorder.messages))
 	}
+
 	wantBody := "opnsense-upgrade execute: apply update failed\n\n" +
 		"Alert_key: 101\n" +
 		"Alert_kind: opnsense-upgrade-execute\n" +

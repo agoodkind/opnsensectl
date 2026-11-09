@@ -49,7 +49,10 @@ var daemonServeCommand = serviceCommand{
 	},
 	configDoc: "TOML file whose [daemon] sets serial_path, baud, config_xml_path, backup_dir, logfile, and state_dir",
 	environment: []serviceEnv{
-		{name: "PATH", purpose: "search path for the commands the Exec RPC runs by bare name (rc.d sets the boot PATH)"},
+		{
+			name:    "PATH",
+			purpose: "search path for the commands the Exec RPC runs by bare name (rc.d sets the boot PATH)",
+		},
 	},
 }
 
@@ -123,9 +126,7 @@ func runOPNsenseDaemonServe(args []string) int {
 		logger.Info("daemon serve: removed orphaned deploy temps", "removed", removed)
 	}
 
-	slog.Info("mwan-opnsense: serving",
-		"serial_path", serialPath,
-		"baud", baud)
+	slog.Info("mwan-opnsense: serving", "serial_path", serialPath, "baud", baud)
 
 	serveErr := svc.Serve(ctx, opts)
 	cancel()
@@ -133,7 +134,9 @@ func runOPNsenseDaemonServe(args []string) int {
 		slog.Error("daemon serve: terminated", "err", serveErr)
 		return 1
 	}
+
 	slog.Info("mwan-opnsense: stopped")
+
 	return 0
 }
 
@@ -147,37 +150,53 @@ func runOPNsenseDaemonIsEnabled(args []string) int {
 			return 0
 		}
 	}
+
 	if len(args) > 0 {
 		fmt.Fprintf(os.Stderr, "mwan opnsense daemon is-enabled: unexpected arguments: %v\n", args)
 		return 2
 	}
+
 	enabled, err := checkRCEnabled(defaultRCName, defaultRCSubr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mwan opnsense daemon is-enabled: %v\n", err)
 		return 2
 	}
+
 	if enabled {
 		fmt.Fprintln(os.Stdout, "mwan-opnsense is enabled")
 		return 0
 	}
+
 	fmt.Fprintln(os.Stderr, "mwan-opnsense is disabled")
+
 	return 1
 }
 
 func checkRCEnabled(name, rcSubr string) (bool, error) {
-	script := strings.Join([]string{
-		`rc_subr_path="$1"`,
-		`service_name="$2"`,
-		`if [ ! -r "${rc_subr_path}" ]; then exit 2; fi`,
-		`. "${rc_subr_path}"`,
-		`name="${service_name}"`,
-		`rcvar="${name}_enable"`,
-		`load_rc_config "${name}" >/dev/null 2>&1`,
-		`checkyesno "${rcvar}"`,
-	}, "\n")
+	script := strings.Join(
+		[]string{
+			`rc_subr_path="$1"`,
+			`service_name="$2"`,
+			`if [ ! -r "${rc_subr_path}" ]; then exit 2; fi`,
+			`. "${rc_subr_path}"`,
+			`name="${service_name}"`,
+			`rcvar="${name}_enable"`,
+			`load_rc_config "${name}" >/dev/null 2>&1`,
+			`checkyesno "${rcvar}"`,
+		},
+		"\n",
+	)
 	ctx, cancel := context.WithTimeout(context.Background(), rcEnabledCheckTimeout)
 	defer cancel()
-	command := exec.CommandContext(ctx, "/bin/sh", "-c", script, "mwan-opnsense-is-enabled", rcSubr, name)
+	command := exec.CommandContext(
+		ctx,
+		"/bin/sh",
+		"-c",
+		script,
+		"mwan-opnsense-is-enabled",
+		rcSubr,
+		name,
+	)
 	output, err := command.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -195,9 +214,16 @@ func checkRCEnabled(name, rcSubr string) (bool, error) {
 			if message == "" {
 				message = "no output"
 			}
-			return false, fmt.Errorf("rc.subr check failed with exit %d: %s", exitErr.ExitCode(), message)
+
+			return false, fmt.Errorf(
+				"rc.subr check failed with exit %d: %s",
+				exitErr.ExitCode(),
+				message,
+			)
 		}
 	}
+
 	slog.Error("daemon is-enabled: rc.subr check failed", "err", err, "rc_subr", rcSubr)
+
 	return false, fmt.Errorf("run rc.subr check: %w", err)
 }

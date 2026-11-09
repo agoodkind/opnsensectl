@@ -35,9 +35,11 @@ func installStubCommands(t *testing.T, withScopeRunner bool) stubCommands {
 	if withScopeRunner {
 		installStub(t, "testdata/systemd_run_stub.sh", filepath.Join(dir, scopeRunner))
 	}
+
 	t.Setenv("PATH", dir)
 	t.Setenv("QM_STUB_RECORD", stubs.qmRecord)
 	t.Setenv("SYSTEMD_RUN_STUB_RECORD", stubs.systemdRunRecord)
+
 	return stubs
 }
 
@@ -47,6 +49,7 @@ func installStub(t *testing.T, source, destination string) {
 	if err != nil {
 		t.Fatalf("read %s: %v", source, err)
 	}
+
 	if err := os.WriteFile(destination, body, 0o755); err != nil {
 		t.Fatalf("write %s: %v", destination, err)
 	}
@@ -60,9 +63,11 @@ func recordedArgv(t *testing.T, path string) []string {
 	if os.IsNotExist(err) {
 		return nil
 	}
+
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
+
 	return strings.Split(strings.TrimRight(string(body), "\n"), "\n")
 }
 
@@ -81,9 +86,11 @@ func TestQmSnapshotterRunsLockHoldingOperationsInScope(t *testing.T) {
 	if err := snapshotter.VMSnapshot(ctx, stubVMID, stubSnapshotName); err != nil {
 		t.Fatalf("VMSnapshot: %v", err)
 	}
+
 	if err := snapshotter.VMRollback(ctx, stubVMID, stubSnapshotName); err != nil {
 		t.Fatalf("VMRollback: %v", err)
 	}
+
 	if err := snapshotter.VMDelSnapshot(ctx, stubVMID, stubSnapshotName); err != nil {
 		t.Fatalf("VMDelSnapshot: %v", err)
 	}
@@ -96,6 +103,7 @@ func TestQmSnapshotterRunsLockHoldingOperationsInScope(t *testing.T) {
 	if got := recordedArgv(t, stubs.systemdRunRecord); !reflect.DeepEqual(got, wantScope) {
 		t.Errorf("systemd-run argv = %q, want %q", got, wantScope)
 	}
+
 	wantQm := []string{
 		"snapshot 104 " + stubSnapshotName,
 		"rollback 104 " + stubSnapshotName,
@@ -120,6 +128,7 @@ func TestQmSnapshotterRunsQmDirectlyWithoutScopeRunner(t *testing.T) {
 	if got := recordedArgv(t, stubs.qmRecord); !reflect.DeepEqual(got, wantQm) {
 		t.Errorf("qm argv = %q, want %q", got, wantQm)
 	}
+
 	if got := recordedArgv(t, stubs.systemdRunRecord); got != nil {
 		t.Errorf("systemd-run ran without being on PATH: %q", got)
 	}
@@ -137,6 +146,7 @@ func TestQmSnapshotterReadsGuestState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VMStatus running: %v", err)
 	}
+
 	if !running {
 		t.Error("VMStatus = false for a running guest, want true")
 	}
@@ -146,6 +156,7 @@ func TestQmSnapshotterReadsGuestState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VMStatus stopped: %v", err)
 	}
+
 	if running {
 		t.Error("VMStatus = true for a stopped guest, want false")
 	}
@@ -158,6 +169,7 @@ func TestQmSnapshotterReadsGuestState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VMSnapshots: %v", err)
 	}
+
 	wantNames := []string{"keep-pre-upgrade-26x-1757000000", stubSnapshotName}
 	if got := parseSnapshotNames(listing); !reflect.DeepEqual(got, wantNames) {
 		t.Errorf("snapshot names = %q, want %q", got, wantNames)
@@ -167,6 +179,7 @@ func TestQmSnapshotterReadsGuestState(t *testing.T) {
 	if got := recordedArgv(t, stubs.qmRecord); !reflect.DeepEqual(got, wantQm) {
 		t.Errorf("qm argv = %q, want %q", got, wantQm)
 	}
+
 	if got := recordedArgv(t, stubs.systemdRunRecord); got != nil {
 		t.Errorf("read operations ran through systemd-run: %q", got)
 	}
@@ -188,14 +201,22 @@ func TestQmSnapshotterFailureCarriesProxmoxOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("VMDelSnapshot succeeded, want an error")
 	}
-	for _, want := range []string{"qm delsnapshot 104 " + stubSnapshotName, "systemd-run scope qm delsnapshot", reason} {
+
+	for _, want := range []string{
+		"qm delsnapshot 104 " + stubSnapshotName,
+		"systemd-run scope qm delsnapshot",
+		reason,
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
 
 	t.Setenv("QM_STUB_FAIL_VERB", "status")
-	t.Setenv("QM_STUB_FAIL_MESSAGE", "Configuration file 'nodes/pve/qemu-server/104.conf' does not exist")
+	t.Setenv(
+		"QM_STUB_FAIL_MESSAGE",
+		"Configuration file 'nodes/pve/qemu-server/104.conf' does not exist",
+	)
 	if _, err := snapshotter.VMStatus(ctx, stubVMID); err == nil {
 		t.Error("VMStatus succeeded on a failed qm status, want an error")
 	}

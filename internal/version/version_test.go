@@ -11,10 +11,15 @@ import (
 func TestGitDirty_MapsGklogStamps(t *testing.T) {
 	orig := gklogversion.Dirty
 	defer func() { gklogversion.Dirty = orig }()
+
 	cases := map[string]string{
-		"true": "dirty", "dirty": "dirty",
-		"false": "clean", "clean": "clean",
-		"": "unknown", "unknown": "unknown", "maybe": "unknown",
+		"true":    "dirty",
+		"dirty":   "dirty",
+		"false":   "clean",
+		"clean":   "clean",
+		"":        "unknown",
+		"unknown": "unknown",
+		"maybe":   "unknown",
 	}
 	for stamp, want := range cases {
 		gklogversion.Dirty = stamp
@@ -31,6 +36,7 @@ func TestGitCommit_ReadsGklogStamp(t *testing.T) {
 	if got := GitCommit(); got != "03cf29ac" {
 		t.Fatalf("GitCommit() = %q, want the gklog stamp", got)
 	}
+
 	gklogversion.Commit = ""
 	if got := GitCommit(); got != "unknown" {
 		t.Fatalf("GitCommit() with empty stamp = %q, want unknown", got)
@@ -58,10 +64,12 @@ func TestBinaryHash_HashesRunningExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := binaryHashFrom(executable)
 	if want == unknown {
 		t.Fatalf("binaryHashFrom(%q) = unknown, want a hash of the test binary", executable)
 	}
+
 	if got := BinaryHash(); got != want {
 		t.Fatalf("BinaryHash() = %q, want %q", got, want)
 	}
@@ -73,6 +81,7 @@ func TestBinaryHashFrom_KnownFile(t *testing.T) {
 	if err := os.WriteFile(p, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
 	// The first 12 hex characters of SHA-256("hello").
 	const want = "2cf24dba5fb0"
 	if got := binaryHashFrom(p); got != want {

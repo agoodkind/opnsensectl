@@ -50,6 +50,7 @@ func NewQmSnapshotter(logger *slog.Logger) *QmSnapshotter {
 	if logger == nil {
 		logger = slog.Default()
 	}
+
 	return &QmSnapshotter{log: logger.With("component", "upgrade-snapshotter")}
 }
 
@@ -66,11 +67,20 @@ func (s *QmSnapshotter) runQm(
 	defer cancel()
 	out, err := exec.CommandContext(cctx, qmRunner, args...).CombinedOutput()
 	if err != nil {
-		s.log.WarnContext(ctx, "upgrade: qm failed",
-			"args", args, "err", err,
-			"output", strings.TrimSpace(string(out)))
+		s.log.WarnContext(
+			ctx,
+			"upgrade: qm failed",
+			"args",
+			args,
+			"err",
+			err,
+			"output",
+			strings.TrimSpace(string(out)),
+		)
+
 		return out, fmt.Errorf("qm %s: %w", args[0], err)
 	}
+
 	return out, nil
 }
 
@@ -85,22 +95,30 @@ func (s *QmSnapshotter) runQm(
 // supported deployment.
 func (s *QmSnapshotter) runQmDetached(ctx context.Context, args ...string) ([]byte, error) {
 	if _, err := exec.LookPath(scopeRunner); err != nil {
-		s.log.WarnContext(ctx,
+		s.log.WarnContext(
+			ctx,
 			"upgrade: systemd-run not found; running qm in this control group",
-			"args", args, "err", err)
+			"args",
+			args,
+			"err",
+			err,
+		)
+
 		return s.runQm(ctx, timeoutQmLockHolding, args...)
 	}
-	s.log.DebugContext(ctx, "upgrade: runQmDetached",
-		"args", args, "wait", timeoutQmLockHolding)
+
+	s.log.DebugContext(ctx, "upgrade: runQmDetached", "args", args, "wait", timeoutQmLockHolding)
 	cctx, cancel := context.WithTimeout(ctx, timeoutQmLockHolding)
 	defer cancel()
 	scopeArgs := append(
-		[]string{"--scope", "--quiet", "--collect", qmRunner}, args...,
+		[]string{"--scope", "--quiet", "--collect", qmRunner},
+		args...,
 	)
 	out, err := exec.CommandContext(cctx, scopeRunner, scopeArgs...).CombinedOutput()
 	if err != nil {
 		return out, fmt.Errorf("systemd-run scope qm %s: %w", args[0], err)
 	}
+
 	return out, nil
 }
 
@@ -111,6 +129,7 @@ func (s *QmSnapshotter) VMStatus(ctx context.Context, vmid string) (bool, error)
 	if err != nil {
 		return false, err
 	}
+
 	return strings.Contains(string(out), "running"), nil
 }
 
@@ -129,14 +148,28 @@ func (s *QmSnapshotter) VMSnapshots(ctx context.Context, vmid string) ([]byte, e
 func (s *QmSnapshotter) VMRollback(ctx context.Context, vmid, snap string) error {
 	out, err := s.runQmDetached(ctx, "rollback", vmid, snap)
 	if err != nil {
-		s.log.ErrorContext(ctx, "qm rollback failed",
-			"vmid", vmid, "snapshot", snap, "err", err,
-			"output", strings.TrimSpace(string(out)))
+		s.log.ErrorContext(
+			ctx,
+			"qm rollback failed",
+			"vmid",
+			vmid,
+			"snapshot",
+			snap,
+			"err",
+			err,
+			"output",
+			strings.TrimSpace(string(out)),
+		)
+
 		return fmt.Errorf(
 			"qm rollback %s %s: %w: %s",
-			vmid, snap, err, strings.TrimSpace(string(out)),
+			vmid,
+			snap,
+			err,
+			strings.TrimSpace(string(out)),
 		)
 	}
+
 	return nil
 }
 
@@ -145,14 +178,28 @@ func (s *QmSnapshotter) VMRollback(ctx context.Context, vmid, snap string) error
 func (s *QmSnapshotter) VMSnapshot(ctx context.Context, vmid, snapName string) error {
 	out, err := s.runQmDetached(ctx, "snapshot", vmid, snapName)
 	if err != nil {
-		s.log.ErrorContext(ctx, "qm snapshot failed",
-			"vmid", vmid, "snapshot", snapName, "err", err,
-			"output", strings.TrimSpace(string(out)))
+		s.log.ErrorContext(
+			ctx,
+			"qm snapshot failed",
+			"vmid",
+			vmid,
+			"snapshot",
+			snapName,
+			"err",
+			err,
+			"output",
+			strings.TrimSpace(string(out)),
+		)
+
 		return fmt.Errorf(
 			"qm snapshot %s %s: %w: %s",
-			vmid, snapName, err, strings.TrimSpace(string(out)),
+			vmid,
+			snapName,
+			err,
+			strings.TrimSpace(string(out)),
 		)
 	}
+
 	return nil
 }
 
@@ -162,13 +209,27 @@ func (s *QmSnapshotter) VMSnapshot(ctx context.Context, vmid, snapName string) e
 func (s *QmSnapshotter) VMDelSnapshot(ctx context.Context, vmid, snapName string) error {
 	out, err := s.runQmDetached(ctx, "delsnapshot", vmid, snapName)
 	if err != nil {
-		s.log.ErrorContext(ctx, "qm delsnapshot failed",
-			"vmid", vmid, "snapshot", snapName, "err", err,
-			"output", strings.TrimSpace(string(out)))
+		s.log.ErrorContext(
+			ctx,
+			"qm delsnapshot failed",
+			"vmid",
+			vmid,
+			"snapshot",
+			snapName,
+			"err",
+			err,
+			"output",
+			strings.TrimSpace(string(out)),
+		)
+
 		return fmt.Errorf(
 			"qm delsnapshot %s %s: %w: %s",
-			vmid, snapName, err, strings.TrimSpace(string(out)),
+			vmid,
+			snapName,
+			err,
+			strings.TrimSpace(string(out)),
 		)
 	}
+
 	return nil
 }

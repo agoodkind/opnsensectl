@@ -41,8 +41,11 @@ type resetCommandFixture struct {
 func newResetCommandFixture(t *testing.T, snapshots []string) resetCommandFixture {
 	t.Helper()
 	stateDir := t.TempDir()
-	writeTempTOML(t, "[opnsense.upgrade]\nvmid = "+strconv.Itoa(resetTestVMID)+
-		"\nstate_dir = \""+stateDir+"\"\n")
+	writeTempTOML(
+		t,
+		"[opnsense.upgrade]\nvmid = "+strconv.Itoa(resetTestVMID)+
+			"\nstate_dir = \""+stateDir+"\"\n",
+	)
 
 	vmid := strconv.Itoa(resetTestVMID)
 	committed := upgrade.State{
@@ -58,27 +61,33 @@ func newResetCommandFixture(t *testing.T, snapshots []string) resetCommandFixtur
 	if err != nil {
 		t.Fatalf("marshal state: %v", err)
 	}
+
 	if err := os.MkdirAll(filepath.Join(stateDir, vmid), 0o750); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(stateDir, vmid, "state.json"), body, 0o600); err != nil {
 		t.Fatalf("write state.json: %v", err)
 	}
 
 	var listing strings.Builder
+
 	for _, name := range snapshots {
 		listing.WriteString(" `-> " + name + " 2026-09-10 10:26:40     no-description\n")
 	}
+
 	listing.WriteString("  `-> current                                             You are here!\n")
 
 	stubDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(stubDir, "qm"), []byte(qmListingStub), 0o700); err != nil {
 		t.Fatalf("write qm stub: %v", err)
 	}
+
 	qmRecord := filepath.Join(stubDir, "qm.argv")
 	t.Setenv("PATH", stubDir)
 	t.Setenv("QM_STUB_RECORD", qmRecord)
 	t.Setenv("QM_STUB_LISTING", listing.String())
+
 	return resetCommandFixture{stateDir: stateDir, qmRecord: qmRecord}
 }
 
@@ -90,6 +99,7 @@ func runResetCapturingStdout(t *testing.T) (int, string) {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+
 	original := os.Stdout
 	os.Stdout = writer
 	exitCode := runOPNsenseUpgradeCmd([]string{string(upgradePhaseReset)})
@@ -97,10 +107,12 @@ func runResetCapturingStdout(t *testing.T) (int, string) {
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close stdout pipe: %v", err)
 	}
+
 	output, err := io.ReadAll(reader)
 	if err != nil {
 		t.Fatalf("read stdout pipe: %v", err)
 	}
+
 	return exitCode, string(output)
 }
 
@@ -115,18 +127,24 @@ func TestUpgradeResetOnCleanCommittedCycleExitsZero(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, want 0; stdout:\n%s", exitCode, output)
 	}
+
 	if strings.TrimSpace(output) != "nothing to do" {
 		t.Fatalf("stdout = %q, want %q", output, "nothing to do")
 	}
+
 	statePath := filepath.Join(fixture.stateDir, strconv.Itoa(resetTestVMID), "state.json")
 	if _, err := os.Stat(statePath); err != nil {
 		t.Fatalf("state.json should stay after a no-op reset: %v", err)
 	}
+
 	record, err := os.ReadFile(fixture.qmRecord)
 	if err != nil {
 		t.Fatalf("read qm record: %v", err)
 	}
-	if got := strings.TrimSpace(string(record)); got != "listsnapshot "+strconv.Itoa(resetTestVMID) {
+
+	if got := strings.TrimSpace(string(record)); got != "listsnapshot "+strconv.Itoa(
+		resetTestVMID,
+	) {
 		t.Fatalf("qm argv = %q, want only the snapshot listing", got)
 	}
 }
@@ -142,7 +160,12 @@ func TestUpgradeResetOnCommittedCycleWithKeptBaselineNeedsConfirm(t *testing.T) 
 	if exitCode != 2 {
 		t.Fatalf("exit code = %d, want 2; stdout:\n%s", exitCode, output)
 	}
-	for _, want := range []string{"- " + resetTestBaseline, "rollback target: (none)", "reset_confirm = true"} {
+
+	for _, want := range []string{
+		"- " + resetTestBaseline,
+		"rollback target: (none)",
+		"reset_confirm = true",
+	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("stdout does not contain %q:\n%s", want, output)
 		}

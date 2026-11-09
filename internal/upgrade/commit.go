@@ -17,24 +17,36 @@ func Commit(ctx context.Context, deps Deps, opts Options) (State, error) {
 		slog.ErrorContext(ctx, "upgrade.Commit: invalid options", "err", err)
 		return emptyState(), err
 	}
+
 	if deps.Snap == nil {
 		err := errors.New("upgrade.Commit: deps.Snap is required")
 		slog.ErrorContext(ctx, "upgrade.Commit: deps.Snap missing", "err", err)
+
 		return emptyState(), err
 	}
+
 	clk := clockOrDefault(deps.Clock)
 
 	cur, err := loadStateCtx(ctx, opts.StateDir, opts.VMID)
 	if err != nil {
 		return emptyState(), err
 	}
+
 	if cur.Phase == PhaseCommitted {
 		return cur, nil
 	}
+
 	if !commitAllowedFrom(cur.Phase) {
 		txErr := TransitionNotAllowedError{From: cur.Phase, To: PhaseCommitted}
-		slog.ErrorContext(ctx, "upgrade.Commit: refusing transition",
-			"err", txErr, "from", cur.Phase)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Commit: refusing transition",
+			"err",
+			txErr,
+			"from",
+			cur.Phase,
+		)
+
 		return cur, txErr
 	}
 
@@ -45,8 +57,8 @@ func Commit(ctx context.Context, deps Deps, opts Options) (State, error) {
 
 	if !opts.KeepSnapshot && target != "" {
 		if err := deps.Snap.VMDelSnapshot(ctx, opts.VMID, target); err != nil {
-			slog.ErrorContext(ctx, "upgrade.Commit: VMDelSnapshot",
-				"err", err, "snapshot", target)
+			slog.ErrorContext(ctx, "upgrade.Commit: VMDelSnapshot", "err", err, "snapshot", target)
+
 			return cur, fmt.Errorf("upgrade.Commit: VMDelSnapshot %q: %w", target, err)
 		}
 	}
@@ -55,18 +67,43 @@ func Commit(ctx context.Context, deps Deps, opts Options) (State, error) {
 	if err := saveStateCtx(ctx, opts.StateDir, cur, clk.Now()); err != nil {
 		return cur, err
 	}
-	emit(ctx, deps.Notifier, slog.LevelInfo, KindCommit, opts.VMID,
+
+	emit(
+		ctx,
+		deps.Notifier,
+		slog.LevelInfo,
+		KindCommit,
+		opts.VMID,
 		"opnsense-upgrade commit: snapshot released",
 		slog.String("vmid", opts.VMID),
 		slog.String("snapshot", target),
 		slog.Bool("kept", opts.KeepSnapshot),
 	)
-	resolve(ctx, deps.Notifier, KindRollback, opts.VMID,
-		"opnsense-upgrade rollback: cleared after commit")
-	resolve(ctx, deps.Notifier, KindValidate, opts.VMID,
-		"opnsense-upgrade validate: cleared after commit")
-	slog.InfoContext(ctx, "upgrade.Commit: complete",
-		"vmid", opts.VMID, "snapshot", target, "kept", opts.KeepSnapshot)
+	resolve(
+		ctx,
+		deps.Notifier,
+		KindRollback,
+		opts.VMID,
+		"opnsense-upgrade rollback: cleared after commit",
+	)
+	resolve(
+		ctx,
+		deps.Notifier,
+		KindValidate,
+		opts.VMID,
+		"opnsense-upgrade validate: cleared after commit",
+	)
+	slog.InfoContext(
+		ctx,
+		"upgrade.Commit: complete",
+		"vmid",
+		opts.VMID,
+		"snapshot",
+		target,
+		"kept",
+		opts.KeepSnapshot,
+	)
+
 	return cur, nil
 }
 

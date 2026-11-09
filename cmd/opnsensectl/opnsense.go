@@ -39,14 +39,32 @@ func opnsenseUsage(out *os.File) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Top-level verbs:")
 	fmt.Fprintln(out, "  version                   print mwan-opnsense build identity")
-	fmt.Fprintln(out, "  exec CMD [ARGS...]        run a command on the OPNsense guest via daemon Exec RPC")
+	fmt.Fprintln(
+		out,
+		"  exec CMD [ARGS...]        run a command on the OPNsense guest via daemon Exec RPC",
+	)
 	fmt.Fprintln(out, "  selftest                  run the selftest payload against the daemon")
-	fmt.Fprintln(out, "  daemon <verb>             in-VM daemon controls (serve|is-enabled|version|state|push|stage|restart|revert|gc)")
+	fmt.Fprintln(
+		out,
+		"  daemon <verb>             in-VM daemon controls (serve|is-enabled|version|state|push|stage|restart|revert|gc)",
+	)
 	fmt.Fprintln(out, "  host <verb>               host-side services (serve|drain)")
-	fmt.Fprintln(out, "  config <verb>             config.xml operations (read|write|backup|import|xpath ...|strip-gateway-v6|inject-gateway-v6)")
-	fmt.Fprintln(out, "  file <verb>               file transfer to/from the OPNsense guest (push|pull)")
-	fmt.Fprintln(out, "  upgrade <phase>           upgrade orchestration (prepare|execute|validate|rollback|commit|run|reset)")
-	fmt.Fprintln(out, "  install                   write this platform's service files (rc.d on FreeBSD, systemd units on linux)")
+	fmt.Fprintln(
+		out,
+		"  config <verb>             config.xml operations (read|write|backup|import|xpath ...|strip-gateway-v6|inject-gateway-v6)",
+	)
+	fmt.Fprintln(
+		out,
+		"  file <verb>               file transfer to/from the OPNsense guest (push|pull)",
+	)
+	fmt.Fprintln(
+		out,
+		"  upgrade <phase>           upgrade orchestration (prepare|execute|validate|rollback|commit|run|reset)",
+	)
+	fmt.Fprintln(
+		out,
+		"  install                   write this platform's service files (rc.d on FreeBSD, systemd units on linux)",
+	)
 }
 
 // runOPNsense is the entry point for `mwan opnsense ...`. It dispatches
@@ -57,6 +75,7 @@ func runOPNsense(args []string) int {
 		opnsenseUsage(os.Stderr)
 		return 2
 	}
+
 	verb := opnsenseVerb(args[0])
 	rest := args[1:]
 
@@ -85,6 +104,7 @@ func runOPNsense(args []string) int {
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense: unknown verb %q\n", string(verb))
 		opnsenseUsage(os.Stderr)
+
 		return 2
 	}
 }

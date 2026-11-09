@@ -39,11 +39,14 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 		slog.ErrorContext(ctx, "upgrade.GC: invalid options", "err", err)
 		return GCResult{Deleted: nil, Skipped: nil}, err
 	}
+
 	if deps.Snap == nil {
 		err := errors.New("upgrade.GC: deps.Snap is required")
 		slog.ErrorContext(ctx, "upgrade.GC: deps.Snap missing", "err", err)
+
 		return GCResult{Deleted: nil, Skipped: nil}, err
 	}
+
 	clk := clockOrDefault(deps.Clock)
 	now := clk.Now()
 	threshold := opts.OlderThan
@@ -63,38 +66,56 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 	}
 
 	result := GCResult{Deleted: nil, Skipped: nil}
+
 	for _, name := range parseSnapshotNames(listing) {
 		if !IsUpgradeSnapshot(name) {
 			continue
 		}
+
 		// Protect the active deploy's snapshot from gc regardless of age.
 		if activeSnap != "" && name == activeSnap {
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
+
 		ts, ok := timestampFromName(name)
 		if !ok {
 			continue
 		}
+
 		age := now.Sub(time.Unix(ts, 0))
 		if age < threshold {
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
+
 		if opts.DryRunGC {
 			result.Deleted = append(result.Deleted, name)
 			continue
 		}
+
 		if err := deps.Snap.VMDelSnapshot(ctx, opts.VMID, name); err != nil {
 			slog.WarnContext(ctx, "upgrade.GC: VMDelSnapshot failed", "err", err, "snapshot", name)
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
+
 		result.Deleted = append(result.Deleted, name)
 	}
-	slog.InfoContext(ctx, "upgrade.GC: complete", "vmid", opts.VMID,
-		"deleted", len(result.Deleted), "skipped", len(result.Skipped),
-		"dry_run", opts.DryRunGC)
+
+	slog.InfoContext(
+		ctx,
+		"upgrade.GC: complete",
+		"vmid",
+		opts.VMID,
+		"deleted",
+		len(result.Deleted),
+		"skipped",
+		len(result.Skipped),
+		"dry_run",
+		opts.DryRunGC,
+	)
+
 	return result, nil
 }
 
@@ -107,13 +128,22 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 func activeDeploySnapshot(ctx context.Context, opts Options) string {
 	st, err := loadStateCtx(ctx, opts.StateDir, opts.VMID)
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.GC: could not load state, active snapshot protection skipped",
-			"err", err, "vmid", opts.VMID)
+		slog.WarnContext(
+			ctx,
+			"upgrade.GC: could not load state, active snapshot protection skipped",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+		)
+
 		return ""
 	}
+
 	if st.Phase == PhaseEmpty || st.Phase == PhaseCommitted || st.Phase == PhaseRollbackFailed {
 		return ""
 	}
+
 	return st.Snapshot
 }
 
@@ -123,6 +153,7 @@ func activeDeploySnapshot(ctx context.Context, opts Options) string {
 // separated token.
 func parseSnapshotNames(qmOutput []byte) []string {
 	var names []string
+
 	sc := bufio.NewScanner(bytes.NewReader(qmOutput))
 	for sc.Scan() {
 		raw := sc.Text()
@@ -130,16 +161,20 @@ func parseSnapshotNames(qmOutput []byte) []string {
 		if trimmed == "" {
 			continue
 		}
+
 		fields := strings.Fields(trimmed)
 		if len(fields) == 0 {
 			continue
 		}
+
 		name := fields[0]
 		if name == "current" {
 			continue
 		}
+
 		names = append(names, name)
 	}
+
 	return names
 }
 
@@ -151,12 +186,16 @@ func timestampFromName(name string) (int64, bool) {
 	if !ok || tail == "" {
 		return 0, false
 	}
+
 	var n int64
+
 	for _, r := range tail {
 		if r < '0' || r > '9' {
 			return 0, false
 		}
+
 		n = n*10 + int64(r-'0')
 	}
+
 	return n, true
 }

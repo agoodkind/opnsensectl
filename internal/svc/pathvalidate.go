@@ -63,6 +63,7 @@ func NewPathValidator(log *slog.Logger, readDirs, writeDirs []string) *PathValid
 	if log == nil {
 		log = slog.Default()
 	}
+
 	pv := &PathValidator{
 		mu:    sync.Mutex{},
 		roots: make(map[string]*os.Root),
@@ -71,20 +72,25 @@ func NewPathValidator(log *slog.Logger, readDirs, writeDirs []string) *PathValid
 		write: append([]string(nil), writeDirs...),
 	}
 	all := make(map[string]struct{})
+
 	for _, dir := range readDirs {
 		all[dir] = struct{}{}
 	}
+
 	for _, dir := range writeDirs {
 		all[dir] = struct{}{}
 	}
+
 	for dir := range all {
 		root, err := os.OpenRoot(dir)
 		if err != nil {
 			log.Warn("pathvalidate: open root failed", "dir", dir, "err", err)
 			continue
 		}
+
 		pv.roots[dir] = root
 	}
+
 	return pv
 }
 
@@ -93,12 +99,15 @@ func (p *PathValidator) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var firstErr error
+
 	for dir, root := range p.roots {
 		if err := root.Close(); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("pathvalidate: close %s: %w", dir, err)
 		}
 	}
+
 	p.roots = nil
+
 	return firstErr
 }
 
@@ -126,17 +135,24 @@ func (p *PathValidator) ResolveWrite(path string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	parent := filepath.Dir(clean)
 	info, statErr := os.Lstat(parent)
 	if statErr != nil {
-		return "", "", logWrappedErrorContext(context.Background(), p.log,
+		return "", "", logWrappedErrorContext(
+			context.Background(),
+			p.log,
 			"opnsensesvc: pathvalidate stat parent",
-			"pathvalidate: stat parent "+parent, statErr,
-			slog.String("parent", parent))
+			"pathvalidate: stat parent "+parent,
+			statErr,
+			slog.String("parent", parent),
+		)
 	}
+
 	if !info.IsDir() {
 		return "", "", fmt.Errorf("pathvalidate: parent %s not a directory", parent)
 	}
+
 	return clean, parent, nil
 }
 
@@ -150,49 +166,71 @@ func (p *PathValidator) validate(path string, dir PathDirection) (string, error)
 	if path == "" {
 		return "", errors.New("pathvalidate: empty path")
 	}
+
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("pathvalidate: %s not absolute", path)
 	}
+
 	clean := filepath.Clean(path)
 	if strings.Contains(clean, "..") {
 		return "", fmt.Errorf("pathvalidate: %s contains dot-dot segment", path)
 	}
+
 	allow := p.write
 	if dir == PathRead {
 		allow = append(append([]string(nil), p.read...), p.write...)
 	}
+
 	for _, root := range allow {
 		if pathBeneath(clean, root) {
 			return clean, nil
 		}
 	}
+
 	return "", fmt.Errorf("pathvalidate: %s outside allowlist", clean)
 }
 
-func (p *PathValidator) openWithin(path string, dir PathDirection, flag int, mode os.FileMode) (*os.File, error) {
+func (p *PathValidator) openWithin(
+	path string,
+	dir PathDirection,
+	flag int,
+	mode os.FileMode,
+) (*os.File, error) {
 	clean, err := p.validate(path, dir)
 	if err != nil {
 		return nil, err
 	}
+
 	root, rel, ok := p.matchRoot(clean)
 	if !ok {
 		return nil, fmt.Errorf("pathvalidate: no open root for %s", clean)
 	}
+
 	flag |= syscall.O_NOFOLLOW
 	file, err := root.OpenFile(rel, flag, mode)
 	if err != nil {
 		ctx := context.Background()
 		if errors.Is(err, fs.ErrInvalid) || isSymlinkLoop(err) {
-			return nil, logWrappedErrorContext(ctx, p.log,
+			return nil, logWrappedErrorContext(
+				ctx,
+				p.log,
 				"opnsensesvc: pathvalidate symlink refused",
-				"pathvalidate: "+clean+" refused (symlink or invalid)", err,
-				slog.String("path", clean))
+				"pathvalidate: "+clean+" refused (symlink or invalid)",
+				err,
+				slog.String("path", clean),
+			)
 		}
-		return nil, logWrappedErrorContext(ctx, p.log,
+
+		return nil, logWrappedErrorContext(
+			ctx,
+			p.log,
 			"opnsensesvc: pathvalidate open",
-			"pathvalidate: open "+clean, err,
-			slog.String("path", clean))
+			"pathvalidate: open "+clean,
+			err,
+			slog.String("path", clean),
+		)
 	}
+
 	return file, nil
 }
 
@@ -200,18 +238,22 @@ func (p *PathValidator) matchRoot(clean string) (*os.Root, string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var bestDir string
+
 	for dir := range p.roots {
 		if pathBeneath(clean, dir) && len(dir) > len(bestDir) {
 			bestDir = dir
 		}
 	}
+
 	if bestDir == "" {
 		return nil, "", false
 	}
+
 	rel, err := filepath.Rel(bestDir, clean)
 	if err != nil {
 		return nil, "", false
 	}
+
 	return p.roots[bestDir], rel, true
 }
 
@@ -220,10 +262,12 @@ func pathBeneath(path, root string) bool {
 	if cleanRoot == path {
 		return true
 	}
+
 	prefix := cleanRoot
 	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
 		prefix += string(filepath.Separator)
 	}
+
 	return strings.HasPrefix(path, prefix)
 }
 

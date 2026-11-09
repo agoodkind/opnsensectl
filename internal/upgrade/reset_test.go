@@ -28,6 +28,7 @@ func newResetFixture(t *testing.T, listing string) *resetFixture {
 	t.Helper()
 	deps, _, snap, _, _ := newDeps(t)
 	snap.listing = []byte(listing)
+
 	return &resetFixture{
 		t:        t,
 		deps:     deps,
@@ -55,7 +56,12 @@ func (f *resetFixture) writeStateInPhase(t *testing.T, snapshot, deployID string
 		UpdatedAt:    time.Unix(1_700_000_000, 0),
 		FailingCheck: nil,
 	}
-	if err := saveStateCtx(context.Background(), f.stateDir, st, time.Unix(1_700_000_000, 0)); err != nil {
+	if err := saveStateCtx(
+		context.Background(),
+		f.stateDir,
+		st,
+		time.Unix(1_700_000_000, 0),
+	); err != nil {
 		t.Fatalf("saveStateCtx: %v", err)
 	}
 }
@@ -65,10 +71,13 @@ func (f *resetFixture) writeStateInPhase(t *testing.T, snapshot, deployID string
 // parseSnapshotNames already handles.
 func listingWith(names ...string) string {
 	var b strings.Builder
+
 	for _, n := range names {
 		b.WriteString(" `-> " + n + " 0 desc\n")
 	}
+
 	b.WriteString(" `-> current\n")
+
 	return b.String()
 }
 
@@ -79,27 +88,36 @@ func TestResetDryRunPrintsPlan(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline, orphan))
 	f.writeState(t, baseline, "deploy-abc")
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	if plan.NothingToDo {
 		t.Fatalf("plan.NothingToDo unexpectedly true: %+v", plan)
 	}
+
 	if plan.RollbackTarget != baseline {
 		t.Fatalf("plan.RollbackTarget = %q want %q", plan.RollbackTarget, baseline)
 	}
+
 	if !reflect.DeepEqual(plan.SnapshotsToDelete, []string{orphan}) {
 		t.Fatalf("plan.SnapshotsToDelete = %v want [%q]", plan.SnapshotsToDelete, orphan)
 	}
+
 	wantPath := filepath.Join(f.stateDir, f.vmid, "state.json")
 	if plan.StatePath != wantPath {
 		t.Fatalf("plan.StatePath = %q want %q", plan.StatePath, wantPath)
 	}
+
 	if plan.DeployID != "deploy-abc" {
 		t.Fatalf("plan.DeployID = %q want %q", plan.DeployID, "deploy-abc")
 	}
@@ -108,9 +126,11 @@ func TestResetDryRunPrintsPlan(t *testing.T) {
 	if len(f.snap.deletes) != 0 {
 		t.Fatalf("dry-run Reset called VMDelSnapshot: %v", f.snap.deletes)
 	}
+
 	if len(f.snap.rollbacks) != 0 {
 		t.Fatalf("dry-run Reset called VMRollback: %v", f.snap.rollbacks)
 	}
+
 	if _, err := os.Stat(plan.StatePath); err != nil {
 		t.Fatalf("dry-run Reset removed state file: %v", err)
 	}
@@ -124,14 +144,19 @@ func TestResetExecuteDeletesThenRollsBackThenRemovesState(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline, orphan1, orphan2))
 	f.writeState(t, baseline, "deploy-xyz")
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
 		t.Fatalf("ResetExecute: %v", err)
 	}
@@ -140,15 +165,18 @@ func TestResetExecuteDeletesThenRollsBackThenRemovesState(t *testing.T) {
 	for _, d := range f.snap.deletes {
 		gotDeletes = append(gotDeletes, d.Snap)
 	}
+
 	wantDeletes := []string{orphan1, orphan2}
 	sort.Strings(gotDeletes)
 	sort.Strings(wantDeletes)
 	if !reflect.DeepEqual(gotDeletes, wantDeletes) {
 		t.Fatalf("deletes = %v want %v", gotDeletes, wantDeletes)
 	}
+
 	if len(f.snap.rollbacks) != 1 || f.snap.rollbacks[0].Snap != baseline {
 		t.Fatalf("rollbacks = %v want one to %q", f.snap.rollbacks, baseline)
 	}
+
 	if _, err := os.Stat(plan.StatePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("state.json should have been removed: stat err = %v", err)
 	}
@@ -168,6 +196,7 @@ func (e *errSnap) VMDelSnapshot(ctx context.Context, vmid, name string) error {
 	if e.failDelete {
 		return errors.New("synthetic delete failure")
 	}
+
 	return e.fakeSnap.VMDelSnapshot(ctx, vmid, name)
 }
 
@@ -175,6 +204,7 @@ func (e *errSnap) VMRollback(ctx context.Context, vmid, snap string) error {
 	if e.failRollback {
 		return errors.New("synthetic rollback failure")
 	}
+
 	return e.fakeSnap.VMRollback(ctx, vmid, snap)
 }
 
@@ -185,11 +215,15 @@ func TestResetExecuteStopsWhenDeleteFails(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline, orphan))
 	f.writeState(t, baseline, "deploy-xyz")
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
@@ -200,9 +234,11 @@ func TestResetExecuteStopsWhenDeleteFails(t *testing.T) {
 	if err := ResetExecute(context.Background(), deps, plan); err == nil {
 		t.Fatalf("ResetExecute: want error, got nil")
 	}
+
 	if len(f.snap.rollbacks) != 0 {
 		t.Fatalf("rollback ran despite delete failure: %v", f.snap.rollbacks)
 	}
+
 	if _, err := os.Stat(plan.StatePath); err != nil {
 		t.Fatalf("state file removed despite delete failure: %v", err)
 	}
@@ -214,20 +250,26 @@ func TestResetExecuteStopsWhenRollbackFails(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline))
 	f.writeState(t, baseline, "deploy-xyz")
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	wrapped := &errSnap{fakeSnap: f.snap, failDelete: false, failRollback: true}
 	deps := f.deps
 	deps.Snap = wrapped
 	if err := ResetExecute(context.Background(), deps, plan); err == nil {
 		t.Fatalf("ResetExecute: want error, got nil")
 	}
+
 	if _, err := os.Stat(plan.StatePath); err != nil {
 		t.Fatalf("state file removed despite rollback failure: %v", err)
 	}
@@ -237,23 +279,33 @@ func TestResetNothingToDoOnCleanState(t *testing.T) {
 	t.Parallel()
 	f := newResetFixture(t, listingWith("some-other-snap"))
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	if !plan.NothingToDo {
 		t.Fatalf("expected NothingToDo on clean state, got %+v", plan)
 	}
+
 	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
 		t.Fatalf("ResetExecute no-op: %v", err)
 	}
+
 	if len(f.snap.deletes) != 0 || len(f.snap.rollbacks) != 0 {
-		t.Fatalf("clean-state reset mutated state: deletes=%v rollbacks=%v",
-			f.snap.deletes, f.snap.rollbacks)
+		t.Fatalf(
+			"clean-state reset mutated state: deletes=%v rollbacks=%v",
+			f.snap.deletes,
+			f.snap.rollbacks,
+		)
 	}
 }
 
@@ -267,17 +319,23 @@ func TestResetRefusesWhenBaselineMissingOnVM(t *testing.T) {
 	f := newResetFixture(t, listingWith("pre-upgrade-26x-1700000999"))
 	f.writeState(t, "pre-upgrade-26x-1700000000", "deploy-xyz")
 
-	_, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	_, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err == nil {
 		t.Fatalf("Reset: want error on missing baseline, got nil")
 	}
+
 	if len(f.snap.deletes) != 0 {
 		t.Fatalf("Reset deleted snapshots despite missing baseline: %v", f.snap.deletes)
 	}
+
 	if len(f.snap.rollbacks) != 0 {
 		t.Fatalf("Reset rolled back despite missing baseline: %v", f.snap.rollbacks)
 	}
@@ -297,17 +355,23 @@ func TestResetOnCommittedCycleDoesNotRollBack(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline, orphan))
 	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	if plan.RollbackTarget != "" {
 		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
 	}
+
 	wantDeletes := []string{baseline, orphan}
 	sort.Strings(wantDeletes)
 	if !reflect.DeepEqual(plan.SnapshotsToDelete, wantDeletes) {
@@ -317,9 +381,11 @@ func TestResetOnCommittedCycleDoesNotRollBack(t *testing.T) {
 	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
 		t.Fatalf("ResetExecute: %v", err)
 	}
+
 	if len(f.snap.rollbacks) != 0 {
 		t.Fatalf("reset rolled a committed upgrade back: %v", f.snap.rollbacks)
 	}
+
 	if _, err := os.Stat(plan.StatePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("state.json should have been removed: stat err = %v", err)
 	}
@@ -337,44 +403,62 @@ func TestResetOnCommittedCycleWithReleasedBaseline(t *testing.T) {
 	f := newResetFixture(t, listingWith())
 	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: want no error when commit released the baseline, got %v", err)
 	}
+
 	if plan.RollbackTarget != "" {
 		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
 	}
+
 	if len(plan.SnapshotsToDelete) != 0 {
 		t.Fatalf("plan.SnapshotsToDelete = %v, want none", plan.SnapshotsToDelete)
 	}
+
 	if !plan.NothingToDo {
-		t.Fatalf("plan.NothingToDo = false, want true on a committed cycle with no snapshots: %+v", plan)
+		t.Fatalf(
+			"plan.NothingToDo = false, want true on a committed cycle with no snapshots: %+v",
+			plan,
+		)
 	}
 
 	if err := ResetExecute(context.Background(), f.deps, plan); err != nil {
 		t.Fatalf("ResetExecute: %v", err)
 	}
+
 	if len(f.snap.rollbacks) != 0 {
 		t.Fatalf("reset rolled back with no baseline on the vm: %v", f.snap.rollbacks)
 	}
+
 	if len(f.snap.deletes) != 0 {
 		t.Fatalf("reset deleted snapshots the vm does not hold: %v", f.snap.deletes)
 	}
+
 	statePath := filepath.Join(f.stateDir, f.vmid, "state.json")
 	if _, err := os.Stat(statePath); err != nil {
 		t.Fatalf("state.json should stay after a no-op reset: %v", err)
 	}
-	if _, err := Prepare(context.Background(), f.deps, Options{
-		VMID:                f.vmid,
-		Target:              "26.7",
-		StateDir:            f.stateDir,
-		UpgradeTimeout:      5 * time.Second,
-		PostRollbackTimeout: 1 * time.Second,
-	}); err != nil {
+
+	if _, err := Prepare(
+		context.Background(),
+		f.deps,
+		Options{
+			VMID:                f.vmid,
+			Target:              "26.7",
+			StateDir:            f.stateDir,
+			UpgradeTimeout:      5 * time.Second,
+			PostRollbackTimeout: 1 * time.Second,
+		},
+	); err != nil {
 		t.Fatalf("Prepare after a no-op reset: %v", err)
 	}
 }
@@ -388,20 +472,27 @@ func TestResetOnCommittedCycleWithKeptBaseline(t *testing.T) {
 	f := newResetFixture(t, listingWith(baseline))
 	f.writeStateInPhase(t, baseline, "deploy-committed", PhaseCommitted)
 
-	plan, err := Reset(context.Background(), f.deps, ResetOptions{
-		VMID:     f.vmid,
-		StateDir: f.stateDir,
-		DeployID: "",
-	})
+	plan, err := Reset(
+		context.Background(),
+		f.deps,
+		ResetOptions{
+			VMID:     f.vmid,
+			StateDir: f.stateDir,
+			DeployID: "",
+		},
+	)
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+
 	if plan.NothingToDo {
 		t.Fatalf("plan.NothingToDo = true, want false while the vm holds %q: %+v", baseline, plan)
 	}
+
 	if !reflect.DeepEqual(plan.SnapshotsToDelete, []string{baseline}) {
 		t.Fatalf("plan.SnapshotsToDelete = %v, want [%q]", plan.SnapshotsToDelete, baseline)
 	}
+
 	if plan.RollbackTarget != "" {
 		t.Fatalf("plan.RollbackTarget = %q, want empty on a committed cycle", plan.RollbackTarget)
 	}

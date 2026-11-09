@@ -20,11 +20,14 @@ func Execute(ctx context.Context, deps Deps, opts Options) (State, error) {
 		slog.ErrorContext(ctx, "upgrade.Execute: invalid options", "err", err)
 		return emptyState(), err
 	}
+
 	if deps.Exec == nil {
 		err := errors.New("upgrade.Execute: deps.Exec is required")
 		slog.ErrorContext(ctx, "upgrade.Execute: deps.Exec missing", "err", err)
+
 		return emptyState(), err
 	}
+
 	clk := clockOrDefault(deps.Clock)
 	now := clk.Now()
 
@@ -32,9 +35,19 @@ func Execute(ctx context.Context, deps Deps, opts Options) (State, error) {
 	if err != nil {
 		return emptyState(), err
 	}
+
 	if err := EnforceTransition(cur.Phase, PhaseExecuting); err != nil {
-		slog.ErrorContext(ctx, "upgrade.Execute: refusing transition",
-			"err", err, "from", cur.Phase, "to", PhaseExecuting)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Execute: refusing transition",
+			"err",
+			err,
+			"from",
+			cur.Phase,
+			"to",
+			PhaseExecuting,
+		)
+
 		return cur, err
 	}
 
@@ -64,6 +77,7 @@ func Execute(ctx context.Context, deps Deps, opts Options) (State, error) {
 			log:     nil,
 		},
 	}
+
 	return run.firmwareChange(ctx)
 }
 
@@ -92,40 +106,60 @@ func (e executeRun) firmwareChange(ctx context.Context) (State, error) {
 	if err != nil {
 		return e.fail(ctx, execCtx, "find pending update", err)
 	}
-	if err := writeFirmwarePlan(ctx, filepath.Join(e.deployDir, ArtefactFirmwarePlan), plan); err != nil {
+
+	if err := writeFirmwarePlan(
+		ctx,
+		filepath.Join(e.deployDir, ArtefactFirmwarePlan),
+		plan,
+	); err != nil {
 		return e.fail(ctx, nil, "write firmware plan", err)
 	}
+
 	if e.opts.DryRunExecute {
-		return e.finish(ctx, "opnsense-upgrade execute: dry run found the pending update, nothing applied",
-			planAttrs(plan)...)
+		return e.finish(
+			ctx,
+			"opnsense-upgrade execute: dry run found the pending update, nothing applied",
+			planAttrs(plan)...,
+		)
 	}
 
 	result, err := applyFirmwareChange(execCtx, e.runner, plan)
 	if err != nil {
 		return e.fail(ctx, execCtx, "apply update", err)
 	}
+
 	if result.RebootRequired {
 		if err := rebootGuest(ctx, e.clk, e.runner, defaultRebootWait()); err != nil {
 			return e.fail(ctx, nil, "reboot", err)
 		}
 	}
+
 	post, err := captureFirmwareState(ctx, e.runner)
 	if err != nil {
 		return e.fail(ctx, nil, "read post-update firmware state", err)
 	}
+
 	result.Post = post
-	if err := writeFirmwareResult(ctx, filepath.Join(e.deployDir, ArtefactFirmwarePost), result); err != nil {
+	if err := writeFirmwareResult(
+		ctx,
+		filepath.Join(e.deployDir, ArtefactFirmwarePost),
+		result,
+	); err != nil {
 		slog.WarnContext(ctx, "upgrade.Execute: write firmware result failed", "err", err)
 	}
+
 	if err := verifyFirmware(plan, result); err != nil {
 		return e.fail(ctx, nil, "verify update", err)
 	}
-	attrs := append(planAttrs(plan),
+
+	attrs := append(
+		planAttrs(plan),
 		slog.Bool("rebooted", result.RebootRequired),
 		slog.String("post_core_version", post.CoreVersion),
 		slog.String("post_base_version", post.BaseVersion),
 		slog.String("post_kernel_version", post.KernelVersion),
 	)
+
 	return e.finish(ctx, "opnsense-upgrade execute: update applied", attrs...)
 }
 
@@ -137,25 +171,56 @@ func (e executeRun) fail(ctx, hungCtx context.Context, stage string, cause error
 	if hungCtx != nil && errors.Is(hungCtx.Err(), context.DeadlineExceeded) {
 		st.Phase = PhaseExecuteHung
 		e.save(ctx, st)
-		emit(ctx, e.deps.Notifier, slog.LevelError, KindExecute, e.opts.VMID,
+		emit(
+			ctx,
+			e.deps.Notifier,
+			slog.LevelError,
+			KindExecute,
+			e.opts.VMID,
 			"opnsense-upgrade execute: hung after watchdog timeout",
 			slog.Duration("timeout", e.timeout),
 			slog.String("vmid", e.opts.VMID),
 			slog.String("stage", stage),
 		)
 		hungErr := fmt.Errorf("upgrade.Execute: hung after %s during %s", e.timeout, stage)
-		slog.ErrorContext(ctx, "upgrade.Execute: hung", "err", hungErr, "vmid", e.opts.VMID, "timeout", e.timeout)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Execute: hung",
+			"err",
+			hungErr,
+			"vmid",
+			e.opts.VMID,
+			"timeout",
+			e.timeout,
+		)
+
 		return st, hungErr
 	}
+
 	st.Phase = PhaseExecuteFailed
 	e.save(ctx, st)
-	emit(ctx, e.deps.Notifier, slog.LevelError, KindExecute, e.opts.VMID,
+	emit(
+		ctx,
+		e.deps.Notifier,
+		slog.LevelError,
+		KindExecute,
+		e.opts.VMID,
 		"opnsense-upgrade execute: "+stage+" failed",
 		slog.String("vmid", e.opts.VMID),
 		slog.String("err", cause.Error()),
 	)
 	failErr := fmt.Errorf("upgrade.Execute: %s: %w", stage, cause)
-	slog.ErrorContext(ctx, "upgrade.Execute: failed", "err", failErr, "vmid", e.opts.VMID, "stage", stage)
+	slog.ErrorContext(
+		ctx,
+		"upgrade.Execute: failed",
+		"err",
+		failErr,
+		"vmid",
+		e.opts.VMID,
+		"stage",
+		stage,
+	)
+
 	return st, failErr
 }
 
@@ -171,12 +236,17 @@ func (e executeRun) finish(ctx context.Context, msg string, attrs ...slog.Attr) 
 	if err := saveStateCtx(ctx, e.opts.StateDir, st, e.clk.Now()); err != nil {
 		return emptyState(), err
 	}
-	fields := append([]slog.Attr{
-		slog.String("vmid", e.opts.VMID),
-		slog.Bool("dry_run", e.opts.DryRunExecute),
-	}, attrs...)
+
+	fields := append(
+		[]slog.Attr{
+			slog.String("vmid", e.opts.VMID),
+			slog.Bool("dry_run", e.opts.DryRunExecute),
+		},
+		attrs...,
+	)
 	emit(ctx, e.deps.Notifier, slog.LevelInfo, KindExecute, e.opts.VMID, msg, fields...)
 	slog.LogAttrs(ctx, slog.LevelInfo, "upgrade.Execute: "+msg, fields...)
+
 	return st, nil
 }
 
@@ -202,20 +272,33 @@ func waitForGuest(ctx context.Context, deps Deps, vmid string, deadline time.Dur
 	if deps.Exec == nil {
 		err := errors.New("waitForGuest: deps.Exec is required")
 		slog.ErrorContext(ctx, "upgrade.waitForGuest: deps.Exec missing", "err", err)
+
 		return err
 	}
+
 	pollCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
+
 	for {
 		res, err := deps.Exec.GuestExec(pollCtx, vmid, guestTrue)
 		if err == nil && res.ExitCode == 0 {
 			return nil
 		}
+
 		select {
 		case <-pollCtx.Done():
 			timedErr := fmt.Errorf("waitForGuest: timed out after %s", deadline)
-			slog.WarnContext(ctx, "upgrade.waitForGuest: timed out",
-				"err", timedErr, "vmid", vmid, "deadline", deadline)
+			slog.WarnContext(
+				ctx,
+				"upgrade.waitForGuest: timed out",
+				"err",
+				timedErr,
+				"vmid",
+				vmid,
+				"deadline",
+				deadline,
+			)
+
 			return timedErr
 		case <-time.After(2 * time.Second):
 		}

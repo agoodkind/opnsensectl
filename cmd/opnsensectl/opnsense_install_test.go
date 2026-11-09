@@ -42,23 +42,33 @@ func routerWant() []installed {
 func newTestInstaller(t *testing.T, dirs ...string) (installer, *bytes.Buffer) {
 	t.Helper()
 	root := t.TempDir()
+
 	for _, dir := range dirs {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+
 	out := &bytes.Buffer{}
+
 	return installer{root: root, uid: os.Getuid(), gid: os.Getgid(), out: out}, out
 }
 
 func routerTestInstaller(t *testing.T) (installer, *bytes.Buffer) {
 	t.Helper()
-	return newTestInstaller(t,
-		"/usr/local/etc/rc.d", "/usr/local/libexec", "/boot/loader.conf.d", "/etc/rc.conf.d")
+
+	return newTestInstaller(
+		t,
+		"/usr/local/etc/rc.d",
+		"/usr/local/libexec",
+		"/boot/loader.conf.d",
+		"/etc/rc.conf.d",
+	)
 }
 
 func assertInstalled(t *testing.T, in installer, want []installed) {
 	t.Helper()
+
 	for _, w := range want {
 		target := filepath.Join(in.root, w.path)
 		info, err := os.Lstat(target)
@@ -66,18 +76,22 @@ func assertInstalled(t *testing.T, in installer, want []installed) {
 			t.Errorf("%s: %v", w.path, err)
 			continue
 		}
+
 		if !info.Mode().IsRegular() || info.Mode().Perm() != w.mode {
 			t.Errorf("%s: mode = %v, want regular %#o", w.path, info.Mode(), w.mode)
 		}
+
 		stat, ok := info.Sys().(*syscall.Stat_t)
 		if !ok || int(stat.Uid) != in.uid || int(stat.Gid) != in.gid {
 			t.Errorf("%s: owner is not %d:%d", w.path, in.uid, in.gid)
 		}
+
 		got, err := os.ReadFile(target)
 		if err != nil {
 			t.Errorf("%s: %v", w.path, err)
 			continue
 		}
+
 		if !bytes.Equal(got, w.content) {
 			t.Errorf("%s: content differs from the embedded source\ngot:\n%s", w.path, got)
 		}
@@ -89,21 +103,25 @@ func assertInstalled(t *testing.T, in installer, want []installed) {
 func ageFiles(t *testing.T, in installer, want []installed) time.Time {
 	t.Helper()
 	past := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+
 	for _, w := range want {
 		if err := os.Chtimes(filepath.Join(in.root, w.path), past, past); err != nil {
 			t.Fatalf("chtimes %s: %v", w.path, err)
 		}
 	}
+
 	return past
 }
 
 func assertUntouched(t *testing.T, in installer, want []installed, past time.Time) {
 	t.Helper()
+
 	for _, w := range want {
 		info, err := os.Stat(filepath.Join(in.root, w.path))
 		if err != nil {
 			t.Fatalf("stat %s: %v", w.path, err)
 		}
+
 		if !info.ModTime().Equal(past) {
 			t.Errorf("%s was rewritten on a rerun: mtime %v", w.path, info.ModTime())
 		}
@@ -119,9 +137,11 @@ func TestInstallRouterWritesServiceFilesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
+
 	if changed != len(routerWant()) {
 		t.Errorf("first install changed %d files, want %d\n%s", changed, len(routerWant()), out)
 	}
+
 	assertInstalled(t, in, routerWant())
 
 	past := ageFiles(t, in, routerWant())
@@ -130,9 +150,11 @@ func TestInstallRouterWritesServiceFilesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
+
 	if changed != 0 || out.Len() != 0 {
 		t.Errorf("rerun changed %d files, want 0\n%s", changed, out)
 	}
+
 	assertUntouched(t, in, routerWant(), past)
 }
 
@@ -148,6 +170,7 @@ func TestInstallRouterKeepsOperatorSettings(t *testing.T) {
 
 	operatorRC := []byte("mwan_opnsense_logfile=\"/var/log/custom.log\"\n")
 	operatorConf := []byte("[daemon]\nbaud = 921600\n")
+
 	kept := []installed{
 		{path: "/etc/rc.conf.d/mwan_opnsense", content: operatorRC, mode: 0o600},
 		{path: "/usr/local/etc/opnsensectl.conf", content: operatorConf, mode: 0o640},
@@ -162,9 +185,11 @@ func TestInstallRouterKeepsOperatorSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
+
 	if changed != 3 {
 		t.Errorf("install changed %d files, want 3", changed)
 	}
+
 	assertInstalled(t, in, routerWant()[:3])
 	assertInstalled(t, in, kept)
 }
@@ -183,7 +208,11 @@ func TestInstallRouterRepairsDrift(t *testing.T) {
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatalf("corrupt shim: %v", err)
 	}
-	if err := os.Chmod(filepath.Join(in.root, "/usr/local/etc/rc.d/mwan_opnsense"), 0o644); err != nil {
+
+	if err := os.Chmod(
+		filepath.Join(in.root, "/usr/local/etc/rc.d/mwan_opnsense"),
+		0o644,
+	); err != nil {
 		t.Fatalf("chmod rc.d: %v", err)
 	}
 
@@ -192,10 +221,12 @@ func TestInstallRouterRepairsDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
+
 	wantOut := "wrote /usr/local/etc/rc.d/mwan_opnsense\nwrote /usr/local/libexec/mwan-opnsense-run\n"
 	if changed != 2 || out.String() != wantOut {
 		t.Errorf("rerun changed %d, output:\n%s\nwant 2 and:\n%s", changed, out, wantOut)
 	}
+
 	assertInstalled(t, in, routerWant())
 }
 
@@ -206,43 +237,76 @@ type fakeSystemBus struct {
 	enabled map[string]bool
 }
 
-func (f *fakeSystemBus) EnableUnitFilesContext(_ context.Context, files []string, runtimeOnly bool, force bool) (bool, []sdbus.EnableUnitFileChange, error) {
-	f.calls = append(f.calls, fmt.Sprintf("enable %s runtime=%t force=%t", strings.Join(files, ","), runtimeOnly, force))
+func (f *fakeSystemBus) EnableUnitFilesContext(
+	_ context.Context,
+	files []string,
+	runtimeOnly bool,
+	force bool,
+) (bool, []sdbus.EnableUnitFileChange, error) {
+	f.calls = append(
+		f.calls,
+		fmt.Sprintf("enable %s runtime=%t force=%t", strings.Join(files, ","), runtimeOnly, force),
+	)
 	var changes []sdbus.EnableUnitFileChange
+
 	for _, name := range files {
 		if f.enabled[name] {
 			continue
 		}
+
 		f.enabled[name] = true
-		changes = append(changes, sdbus.EnableUnitFileChange{
-			Type:        "symlink",
-			Filename:    "/etc/systemd/system/multi-user.target.wants/" + name,
-			Destination: "/etc/systemd/system/" + name,
-		})
+		changes = append(
+			changes,
+			sdbus.EnableUnitFileChange{
+				Type:        "symlink",
+				Filename:    "/etc/systemd/system/multi-user.target.wants/" + name,
+				Destination: "/etc/systemd/system/" + name,
+			},
+		)
 	}
+
 	return false, changes, nil
 }
 
-func (f *fakeSystemBus) StopUnitContext(_ context.Context, name string, mode string, ch chan<- string) (int, error) {
+func (f *fakeSystemBus) StopUnitContext(
+	_ context.Context,
+	name string,
+	mode string,
+	ch chan<- string,
+) (int, error) {
 	f.calls = append(f.calls, fmt.Sprintf("stop %s mode=%s", name, mode))
 	ch <- "done"
+
 	return 1, nil
 }
 
-func (f *fakeSystemBus) DisableUnitFilesContext(_ context.Context, files []string, runtimeOnly bool) ([]sdbus.DisableUnitFileChange, error) {
-	f.calls = append(f.calls, fmt.Sprintf("disable %s runtime=%t", strings.Join(files, ","), runtimeOnly))
+func (f *fakeSystemBus) DisableUnitFilesContext(
+	_ context.Context,
+	files []string,
+	runtimeOnly bool,
+) ([]sdbus.DisableUnitFileChange, error) {
+	f.calls = append(
+		f.calls,
+		fmt.Sprintf("disable %s runtime=%t", strings.Join(files, ","), runtimeOnly),
+	)
 	var changes []sdbus.DisableUnitFileChange
+
 	for _, name := range files {
 		if !f.enabled[name] {
 			continue
 		}
+
 		delete(f.enabled, name)
-		changes = append(changes, sdbus.DisableUnitFileChange{
-			Type:        "unlink",
-			Filename:    "/etc/systemd/system/sockets.target.wants/" + name,
-			Destination: "",
-		})
+		changes = append(
+			changes,
+			sdbus.DisableUnitFileChange{
+				Type:        "unlink",
+				Filename:    "/etc/systemd/system/sockets.target.wants/" + name,
+				Destination: "",
+			},
+		)
 	}
+
 	return changes, nil
 }
 
@@ -266,12 +330,22 @@ func TestInstallHostWritesAndEnablesUnits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
+
 	if changed != 4 {
 		t.Errorf("install changed %d, want 2 units written and 2 enabled\n%s", changed, out)
 	}
+
 	units := []installed{
-		{path: "/etc/systemd/system/mwan-opnsense-host.service", content: hostServiceUnit, mode: 0o644},
-		{path: "/etc/systemd/system/mwan-opnsense-drain.service", content: drainServiceUnit, mode: 0o644},
+		{
+			path:    "/etc/systemd/system/mwan-opnsense-host.service",
+			content: hostServiceUnit,
+			mode:    0o644,
+		},
+		{
+			path:    "/etc/systemd/system/mwan-opnsense-drain.service",
+			content: drainServiceUnit,
+			mode:    0o644,
+		},
 	}
 	assertInstalled(t, in, units)
 
@@ -284,21 +358,27 @@ func TestInstallHostWritesAndEnablesUnits(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("read %s: %v", path, readErr)
 		}
+
 		if !strings.Contains(string(data), line) {
 			t.Errorf("%s missing %q", path, strings.TrimSpace(line))
 		}
+
 		if strings.Contains(string(data), ".socket") {
 			t.Errorf("%s still references a socket unit", path)
 		}
 	}
+
 	entries, err := os.ReadDir(filepath.Join(in.root, "/etc/systemd/system"))
 	if err != nil {
 		t.Fatalf("read unit dir: %v", err)
 	}
+
 	var names []string
+
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
+
 	if want := []string{drainUnitName, hostUnitName}; !slices.Equal(names, want) {
 		t.Errorf("unit dir holds %v, want only %v", names, want)
 	}
@@ -309,9 +389,11 @@ func TestInstallHostWritesAndEnablesUnits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
+
 	if changed != 0 || out.Len() != 0 {
 		t.Errorf("rerun changed %d, want 0\n%s", changed, out)
 	}
+
 	assertUntouched(t, in, units, past)
 
 	enableCall := "enable mwan-opnsense-host.service,mwan-opnsense-drain.service runtime=false force=false"
@@ -331,10 +413,13 @@ func TestInstallHostRemovesLeftoverSocketUnit(t *testing.T) {
 	ctx := context.Background()
 	in, out := newTestInstaller(t, "/etc/systemd/system")
 	socketPath := filepath.Join(in.root, "/etc/systemd/system/mwan-opnsense-drain.socket")
-	socketUnit := []byte("[Socket]\nListenStream=/var/run/mwan-opnsense-drain.sock\nService=mwan-opnsense-drain.service\n")
+	socketUnit := []byte(
+		"[Socket]\nListenStream=/var/run/mwan-opnsense-drain.sock\nService=mwan-opnsense-drain.service\n",
+	)
 	if err := os.WriteFile(socketPath, socketUnit, 0o644); err != nil {
 		t.Fatalf("seed socket unit: %v", err)
 	}
+
 	bus := &fakeSystemBus{calls: nil, enabled: map[string]bool{"mwan-opnsense-drain.socket": true}}
 	openBus := func(context.Context) (unitManager, error) { return bus, nil }
 
@@ -342,13 +427,16 @@ func TestInstallHostRemovesLeftoverSocketUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
+
 	// 2 units written, the socket unlinked and its file removed, 2 units enabled.
 	if changed != 6 {
 		t.Errorf("install changed %d, want 6\n%s", changed, out)
 	}
+
 	if _, statErr := os.Lstat(socketPath); !os.IsNotExist(statErr) {
 		t.Errorf("socket unit still present, statErr=%v", statErr)
 	}
+
 	if bus.enabled["mwan-opnsense-drain.socket"] {
 		t.Error("socket unit still enabled")
 	}
@@ -358,6 +446,7 @@ func TestInstallHostRemovesLeftoverSocketUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
+
 	if changed != 0 || out.Len() != 0 {
 		t.Errorf("rerun changed %d, want 0\n%s", changed, out)
 	}
@@ -367,8 +456,12 @@ func TestInstallHostRemovesLeftoverSocketUnit(t *testing.T) {
 		"reload",
 		"stop mwan-opnsense-drain.socket mode=replace",
 		"disable mwan-opnsense-drain.socket runtime=false",
-		enableCall, "reload", "close",
-		enableCall, "reload", "close",
+		enableCall,
+		"reload",
+		"close",
+		enableCall,
+		"reload",
+		"close",
 	}
 	if !slices.Equal(bus.calls, wantCalls) {
 		t.Errorf("systemd calls = %q\nwant %q", bus.calls, wantCalls)

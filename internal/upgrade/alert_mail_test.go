@@ -58,6 +58,7 @@ func (r *mailRecorder) recorded() []recordedMail {
 	defer r.mu.Unlock()
 	out := make([]recordedMail, len(r.mails))
 	copy(out, r.mails)
+
 	return out
 }
 
@@ -73,6 +74,7 @@ func (m *recordingMailer) Send(_ context.Context, message mailer.Message) error 
 	m.recorder.mu.Lock()
 	defer m.recorder.mu.Unlock()
 	m.recorder.mails = append(m.recorder.mails, recordedMail{config: m.config, message: message})
+
 	return nil
 }
 
@@ -109,6 +111,7 @@ func TestUpgradePhasesMailAlertsThroughSendEmail(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(alertMailConfig), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
+
 	t.Setenv(opnsensecfg.PathEnv, configPath)
 	t.Setenv(opnsensecfg.SMTP2GOEnv, alertMailEnvAPIKey)
 	cfg, err := opnsensecfg.Load()
@@ -122,6 +125,7 @@ func TestUpgradePhasesMailAlertsThroughSendEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithMailer: %v", err)
 	}
+
 	deps.Notifier = notifier
 	exec.byCommand[guestTrue] = GuestExecResult{ExitCode: 0, Stdout: "", Stderr: ""}
 	snap.running = true
@@ -130,30 +134,43 @@ func TestUpgradePhasesMailAlertsThroughSendEmail(t *testing.T) {
 	ctx := context.Background()
 
 	snap.snapErr = errors.New("qm snapshot 101: exit status 2")
+
 	for range 2 {
 		if _, prepareErr := Prepare(ctx, deps, opts); prepareErr == nil {
 			t.Fatal("Prepare succeeded while the snapshot fails")
 		}
 	}
+
 	snap.snapErr = nil
 	if st, prepareErr := Prepare(ctx, deps, opts); prepareErr != nil || st.Phase != PhasePrepared {
 		t.Fatalf("Prepare = %q, %v; want %q", st.Phase, prepareErr, PhasePrepared)
 	}
+
 	if st, executeErr := Execute(ctx, deps, opts); executeErr != nil || st.Phase != PhaseExecuted {
 		t.Fatalf("Execute = %q, %v; want %q", st.Phase, executeErr, PhaseExecuted)
 	}
 
-	validator.result = AggregateChecks([]CheckResult{{Name: "bgp_established", Pass: false, Note: "0 of 2 peers"}})
-	if st, _, validateErr := Validate(ctx, deps, opts); validateErr != nil || st.Phase != PhaseValidatedFail {
+	validator.result = AggregateChecks([]CheckResult{
+		{Name: "bgp_established", Pass: false, Note: "0 of 2 peers"},
+	})
+	if st, _, validateErr := Validate(ctx, deps, opts); validateErr != nil ||
+		st.Phase != PhaseValidatedFail {
 		t.Fatalf("Validate = %q, %v; want %q", st.Phase, validateErr, PhaseValidatedFail)
 	}
-	if st, rollbackErr := Rollback(ctx, deps, opts); rollbackErr != nil || st.Phase != PhaseRolledBack {
+
+	if st, rollbackErr := Rollback(ctx, deps, opts); rollbackErr != nil ||
+		st.Phase != PhaseRolledBack {
 		t.Fatalf("Rollback = %q, %v; want %q", st.Phase, rollbackErr, PhaseRolledBack)
 	}
-	validator.result = AggregateChecks([]CheckResult{{Name: "bgp_established", Pass: true, Note: "2 of 2 peers"}})
-	if st, _, validateErr := Validate(ctx, deps, opts); validateErr != nil || st.Phase != PhaseValidatedPass {
+
+	validator.result = AggregateChecks([]CheckResult{
+		{Name: "bgp_established", Pass: true, Note: "2 of 2 peers"},
+	})
+	if st, _, validateErr := Validate(ctx, deps, opts); validateErr != nil ||
+		st.Phase != PhaseValidatedPass {
 		t.Fatalf("Validate = %q, %v; want %q", st.Phase, validateErr, PhaseValidatedPass)
 	}
+
 	if st, commitErr := Commit(ctx, deps, opts); commitErr != nil || st.Phase != PhaseCommitted {
 		t.Fatalf("Commit = %q, %v; want %q", st.Phase, commitErr, PhaseCommitted)
 	}
@@ -193,23 +210,47 @@ func TestUpgradePhasesMailAlertsThroughSendEmail(t *testing.T) {
 		for i, mail := range got {
 			t.Logf("mail %d: subject %q", i, mail.message.Subject)
 		}
+
 		t.Fatalf("recorded %d mails, want %d", len(got), len(want))
 	}
+
 	for i := range want {
 		if !reflect.DeepEqual(got[i].config, want[i].config) {
 			t.Errorf("mail %d send-email config = %+v, want %+v", i, got[i].config, want[i].config)
 		}
+
 		if got[i].message.To != want[i].message.To || got[i].message.From != want[i].message.From ||
 			got[i].message.Caller != want[i].message.Caller || got[i].message.Name != want[i].message.Name {
-			t.Errorf("mail %d envelope = to %q from %q caller %q name %q, want to %q from %q caller %q name %q",
-				i, got[i].message.To, got[i].message.From, got[i].message.Caller, got[i].message.Name,
-				want[i].message.To, want[i].message.From, want[i].message.Caller, want[i].message.Name)
+			t.Errorf(
+				"mail %d envelope = to %q from %q caller %q name %q, want to %q from %q caller %q name %q",
+				i,
+				got[i].message.To,
+				got[i].message.From,
+				got[i].message.Caller,
+				got[i].message.Name,
+				want[i].message.To,
+				want[i].message.From,
+				want[i].message.Caller,
+				want[i].message.Name,
+			)
 		}
+
 		if got[i].message.Subject != want[i].message.Subject {
-			t.Errorf("mail %d subject = %q, want %q", i, got[i].message.Subject, want[i].message.Subject)
+			t.Errorf(
+				"mail %d subject = %q, want %q",
+				i,
+				got[i].message.Subject,
+				want[i].message.Subject,
+			)
 		}
+
 		if got[i].message.Body != want[i].message.Body {
-			t.Errorf("mail %d body:\n--- got ---\n%s\n--- want ---\n%s", i, got[i].message.Body, want[i].message.Body)
+			t.Errorf(
+				"mail %d body:\n--- got ---\n%s\n--- want ---\n%s",
+				i,
+				got[i].message.Body,
+				want[i].message.Body,
+			)
 		}
 	}
 }

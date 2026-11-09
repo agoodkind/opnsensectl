@@ -44,9 +44,11 @@ func (p *fakeHostPinger) Ping(_ context.Context, bin, target string) bool {
 	if probe != pingIPv4Probe && probe != pingIPv6Probe {
 		return false
 	}
+
 	if p.down[probe] {
 		return false
 	}
+
 	return p.calls[probe] >= p.answersFrom[probe]
 }
 
@@ -59,15 +61,24 @@ type fakeDaemon struct {
 	closed     bool
 }
 
-func (d *fakeDaemon) Version(_ context.Context, _ *mwanv1.VersionRequest) (*mwanv1.VersionResponse, error) {
+func (d *fakeDaemon) Version(
+	_ context.Context,
+	_ *mwanv1.VersionRequest,
+) (*mwanv1.VersionResponse, error) {
 	if d.versionErr != nil {
 		return nil, d.versionErr
 	}
+
 	return &mwanv1.VersionResponse{Version: "0.0.0-test", BuildCommit: "7a86cca"}, nil
 }
 
 func (d *fakeDaemon) Exec(
-	_ context.Context, command string, args []string, _ bool, _ int32, _ []byte,
+	_ context.Context,
+	command string,
+	args []string,
+	_ bool,
+	_ int32,
+	_ []byte,
 ) (*ExecResult, error) {
 	d.execArgv = append([]string{command}, args...)
 	return d.execResult, d.execErr
@@ -96,6 +107,7 @@ func newTestHealthValidator(pinger Pinger, daemon *fakeDaemon) *HealthValidator 
 
 func TestHealthValidatorChecks(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name        string
 		setup       func(pinger *fakeHostPinger, daemon *fakeDaemon)
@@ -127,7 +139,9 @@ func TestHealthValidatorChecks(t *testing.T) {
 		{
 			name: "daemon version fails",
 			setup: func(_ *fakeHostPinger, daemon *fakeDaemon) {
-				daemon.versionErr = errors.New("rpc error: code = Unavailable desc = connection refused")
+				daemon.versionErr = errors.New(
+					"rpc error: code = Unavailable desc = connection refused",
+				)
 			},
 			wantFailing: []string{checkDaemonVersion},
 		},
@@ -135,56 +149,83 @@ func TestHealthValidatorChecks(t *testing.T) {
 			name: "exec transport fails",
 			setup: func(_ *fakeHostPinger, daemon *fakeDaemon) {
 				daemon.execResult = nil
-				daemon.execErr = errors.New("rpc error: code = Unavailable desc = transport is closing")
+				daemon.execErr = errors.New(
+					"rpc error: code = Unavailable desc = transport is closing",
+				)
 			},
 			wantFailing: []string{checkExecHostname},
 		},
 		{
 			name: "exec exits non-zero",
 			setup: func(_ *fakeHostPinger, daemon *fakeDaemon) {
-				daemon.execResult = &ExecResult{Stderr: []byte("hostname: not found\n"), ExitCode: 127}
+				daemon.execResult = &ExecResult{
+					Stderr:   []byte("hostname: not found\n"),
+					ExitCode: 127,
+				}
 			},
 			wantFailing: []string{checkExecHostname},
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			pinger := newFakeHostPinger()
-			daemon := &fakeDaemon{execResult: hostnameAnswer()}
-			tc.setup(pinger, daemon)
+		t.Run(
+			tc.name,
+			func(t *testing.T) {
+				t.Parallel()
+				pinger := newFakeHostPinger()
+				daemon := &fakeDaemon{execResult: hostnameAnswer()}
+				tc.setup(pinger, daemon)
 
-			result, err := newTestHealthValidator(pinger, daemon).Validate(
-				context.Background(), ValidateContext{VMID: "101"})
-			if err != nil {
-				t.Fatalf("Validate: %v", err)
-			}
+				result, err := newTestHealthValidator(pinger, daemon).Validate(
+					context.Background(),
+					ValidateContext{VMID: "101"},
+				)
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
 
-			if got := failingCheckNames(result); !slices.Equal(got, tc.wantFailing) {
-				t.Fatalf("failing checks = %v, want %v; checks = %+v", got, tc.wantFailing, result.Checks)
-			}
-			if result.AllPass != (len(tc.wantFailing) == 0) {
-				t.Fatalf("AllPass = %t with failing checks %v", result.AllPass, tc.wantFailing)
-			}
-			if len(result.Checks) != 4 {
-				t.Fatalf("checks = %+v, want four", result.Checks)
-			}
-			if argv := strings.Join(daemon.execArgv, " "); argv != "/bin/hostname" {
-				t.Fatalf("exec argv = %q, want /bin/hostname", argv)
-			}
-			if !daemon.closed {
-				t.Fatalf("host bridge client was not closed")
-			}
-			if tc.wantIPv6Probes != 0 && pinger.calls[pingIPv6Probe] != tc.wantIPv6Probes {
-				t.Fatalf("IPv6 probes = %d, want %d", pinger.calls[pingIPv6Probe], tc.wantIPv6Probes)
-			}
-		})
+				if got := failingCheckNames(result); !slices.Equal(got, tc.wantFailing) {
+					t.Fatalf(
+						"failing checks = %v, want %v; checks = %+v",
+						got,
+						tc.wantFailing,
+						result.Checks,
+					)
+				}
+
+				if result.AllPass != (len(tc.wantFailing) == 0) {
+					t.Fatalf("AllPass = %t with failing checks %v", result.AllPass, tc.wantFailing)
+				}
+
+				if len(result.Checks) != 4 {
+					t.Fatalf("checks = %+v, want four", result.Checks)
+				}
+
+				if argv := strings.Join(daemon.execArgv, " "); argv != "/bin/hostname" {
+					t.Fatalf("exec argv = %q, want /bin/hostname", argv)
+				}
+
+				if !daemon.closed {
+					t.Fatalf("host bridge client was not closed")
+				}
+
+				if tc.wantIPv6Probes != 0 && pinger.calls[pingIPv6Probe] != tc.wantIPv6Probes {
+					t.Fatalf(
+						"IPv6 probes = %d, want %d",
+						pinger.calls[pingIPv6Probe],
+						tc.wantIPv6Probes,
+					)
+				}
+			},
+		)
 	}
 }
 
 func TestHealthValidatorFailsDaemonChecksWhenTheBridgeDoesNotDial(t *testing.T) {
 	t.Parallel()
-	validator := newTestHealthValidator(newFakeHostPinger(), &fakeDaemon{execResult: hostnameAnswer()})
+	validator := newTestHealthValidator(
+		newFakeHostPinger(),
+		&fakeDaemon{execResult: hostnameAnswer()},
+	)
 	validator.dial = func(context.Context) (DaemonRPCClient, func() error, error) {
 		return nil, nil, errors.New("opnsense: only unix:// targets supported")
 	}
@@ -220,13 +261,20 @@ func TestRunRollsBackWhenHostEgressFails(t *testing.T) {
 	if !out.AutoRollback {
 		t.Fatalf("auto rollback did not fire; validation = %+v", out.Validation)
 	}
+
 	if out.Reached != PhaseRolledBack {
 		t.Fatalf("reached = %q, want rolled_back", out.Reached)
 	}
+
 	if len(snap.rollbacks) != 1 {
 		t.Fatalf("rollback calls = %d, want 1", len(snap.rollbacks))
 	}
+
 	if !slices.Equal(failingCheckNames(out.Validation), []string{checkEgressIPv6}) {
-		t.Fatalf("failing checks = %v, want [%s]", failingCheckNames(out.Validation), checkEgressIPv6)
+		t.Fatalf(
+			"failing checks = %v, want [%s]",
+			failingCheckNames(out.Validation),
+			checkEgressIPv6,
+		)
 	}
 }

@@ -23,8 +23,16 @@ func Rollback(ctx context.Context, deps Deps, opts Options) (State, error) {
 	}
 
 	if err := deps.Snap.VMRollback(ctx, opts.VMID, target); err != nil {
-		return markRollbackFailed(ctx, deps, opts, cur,
-			"VMRollback failed", err, "VMRollback", target)
+		return markRollbackFailed(
+			ctx,
+			deps,
+			opts,
+			cur,
+			"VMRollback failed",
+			err,
+			"VMRollback",
+			target,
+		)
 	}
 
 	if err := startGuestIfStopped(ctx, deps, opts, cur); err != nil {
@@ -36,9 +44,18 @@ func Rollback(ctx context.Context, deps Deps, opts Options) (State, error) {
 		if post <= 0 {
 			post = DefaultPostRollbackTimeout
 		}
+
 		if err := waitForGuest(ctx, deps, opts.VMID, post); err != nil {
-			return markRollbackFailed(ctx, deps, opts, cur,
-				"QGA did not respond after rollback", err, "waitForGuest", target)
+			return markRollbackFailed(
+				ctx,
+				deps,
+				opts,
+				cur,
+				"QGA did not respond after rollback",
+				err,
+				"waitForGuest",
+				target,
+			)
 		}
 	}
 
@@ -47,13 +64,26 @@ func Rollback(ctx context.Context, deps Deps, opts Options) (State, error) {
 	if err := saveStateCtx(ctx, opts.StateDir, cur, clk.Now()); err != nil {
 		return cur, err
 	}
-	emit(ctx, deps.Notifier, slog.LevelWarn, KindRollback, opts.VMID,
+
+	emit(
+		ctx,
+		deps.Notifier,
+		slog.LevelWarn,
+		KindRollback,
+		opts.VMID,
 		"opnsense-upgrade rollback: snapshot restored",
 		slog.String("vmid", opts.VMID),
 		slog.String("snapshot", target),
 	)
-	slog.InfoContext(ctx, "upgrade.Rollback: snapshot restored",
-		"vmid", opts.VMID, "snapshot", target)
+	slog.InfoContext(
+		ctx,
+		"upgrade.Rollback: snapshot restored",
+		"vmid",
+		opts.VMID,
+		"snapshot",
+		target,
+	)
+
 	return cur, nil
 }
 
@@ -65,31 +95,45 @@ func preRollbackChecks(ctx context.Context, deps Deps, opts Options) (State, str
 		slog.ErrorContext(ctx, "upgrade.Rollback: invalid options", "err", err)
 		return emptyState(), "", err
 	}
+
 	if deps.Snap == nil {
 		err := errors.New("upgrade.Rollback: deps.Snap is required")
 		slog.ErrorContext(ctx, "upgrade.Rollback: deps.Snap missing", "err", err)
+
 		return emptyState(), "", err
 	}
+
 	cur, err := loadStateCtx(ctx, opts.StateDir, opts.VMID)
 	if err != nil {
 		return emptyState(), "", err
 	}
+
 	if !rollbackAllowedFrom(cur.Phase) {
 		txErr := TransitionNotAllowedError{From: cur.Phase, To: PhaseRolledBack}
-		slog.ErrorContext(ctx, "upgrade.Rollback: refusing transition",
-			"err", txErr, "from", cur.Phase)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Rollback: refusing transition",
+			"err",
+			txErr,
+			"from",
+			cur.Phase,
+		)
+
 		return cur, "", txErr
 	}
+
 	target := opts.Snapshot
 	if target == "" {
 		target = cur.Snapshot
 	}
+
 	if target == "" {
 		err := errors.New("upgrade.Rollback: no snapshot recorded and none provided via --snapshot")
-		slog.ErrorContext(ctx, "upgrade.Rollback: missing snapshot",
-			"err", err, "vmid", opts.VMID)
+		slog.ErrorContext(ctx, "upgrade.Rollback: missing snapshot", "err", err, "vmid", opts.VMID)
+
 		return cur, "", err
 	}
+
 	return cur, target, nil
 }
 
@@ -101,15 +145,25 @@ func deleteChildSnapshots(ctx context.Context, deps Deps, vmid, target string) e
 		slog.ErrorContext(ctx, "upgrade.Rollback: VMSnapshots", "err", err, "vmid", vmid)
 		return fmt.Errorf("upgrade.Rollback: VMSnapshots: %w", err)
 	}
+
 	children := snapshotsAfter(listing, target)
 	for _, child := range slices.Backward(children) {
 		if err := deps.Snap.VMDelSnapshot(ctx, vmid, child); err != nil {
 			if logger := deps.Log; logger != nil {
-				logger.WarnContext(ctx, "upgrade.Rollback: child snapshot delete failed",
-					"vmid", vmid, "snap", child, "err", err)
+				logger.WarnContext(
+					ctx,
+					"upgrade.Rollback: child snapshot delete failed",
+					"vmid",
+					vmid,
+					"snap",
+					child,
+					"err",
+					err,
+				)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -119,17 +173,35 @@ func deleteChildSnapshots(ctx context.Context, deps Deps, vmid, target string) e
 func startGuestIfStopped(ctx context.Context, deps Deps, opts Options, cur State) error {
 	running, err := deps.Snap.VMStatus(ctx, opts.VMID)
 	if err != nil && deps.Log != nil {
-		deps.Log.WarnContext(ctx, "upgrade.Rollback: VMStatus probe failed",
-			"vmid", opts.VMID, "err", err)
+		deps.Log.WarnContext(
+			ctx,
+			"upgrade.Rollback: VMStatus probe failed",
+			"vmid",
+			opts.VMID,
+			"err",
+			err,
+		)
 	}
+
 	if running {
 		return nil
 	}
+
 	if err := deps.Snap.VMStart(ctx, opts.VMID); err != nil {
-		_, markErr := markRollbackFailed(ctx, deps, opts, cur,
-			"VM did not start after rollback", err, "VMStart", cur.Snapshot)
+		_, markErr := markRollbackFailed(
+			ctx,
+			deps,
+			opts,
+			cur,
+			"VM did not start after rollback",
+			err,
+			"VMStart",
+			cur.Snapshot,
+		)
+
 		return markErr
 	}
+
 	return nil
 }
 
@@ -150,17 +222,31 @@ func markRollbackFailed(
 	cur.Phase = PhaseRollbackFailed
 	clk := clockOrDefault(deps.Clock)
 	if saveErr := saveStateCtx(ctx, opts.StateDir, cur, clk.Now()); saveErr != nil {
-		slog.WarnContext(ctx, "upgrade.Rollback: save rollback_failed state",
-			"err", saveErr)
+		slog.WarnContext(ctx, "upgrade.Rollback: save rollback_failed state", "err", saveErr)
 	}
-	emit(ctx, deps.Notifier, slog.LevelError, KindRollbackFailed, opts.VMID,
+
+	emit(
+		ctx,
+		deps.Notifier,
+		slog.LevelError,
+		KindRollbackFailed,
+		opts.VMID,
 		"opnsense-upgrade rollback: "+humanMsg,
 		slog.String("vmid", opts.VMID),
 		slog.String("snapshot", target),
 		slog.String("err", cause.Error()),
 	)
-	slog.ErrorContext(ctx, "upgrade.Rollback: "+stage+" failed",
-		"err", cause, "snapshot", target, "vmid", opts.VMID)
+	slog.ErrorContext(
+		ctx,
+		"upgrade.Rollback: "+stage+" failed",
+		"err",
+		cause,
+		"snapshot",
+		target,
+		"vmid",
+		opts.VMID,
+	)
+
 	return cur, fmt.Errorf("upgrade.Rollback: %s: %w", stage, cause)
 }
 

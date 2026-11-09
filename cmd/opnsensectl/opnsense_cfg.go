@@ -34,6 +34,7 @@ func loadOpnsenseConfig() (*opnsensecfg.Config, error) {
 		slog.Error("opnsense: load config", "err", err)
 		return nil, fmt.Errorf("opnsense: load config: %w", err)
 	}
+
 	return cfg, nil
 }
 
@@ -45,6 +46,7 @@ func loadServiceConfig(path string) (*opnsensecfg.Config, error) {
 		slog.Error("opnsense: load service config", "err", err, "path", path)
 		return nil, fmt.Errorf("opnsense: load config: %w", err)
 	}
+
 	return cfg, nil
 }
 
@@ -58,6 +60,7 @@ func requireProbeTarget(cfg *opnsensecfg.Config) (string, error) {
 	if target == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.probe].target is required in %s", cfg.Source)
 	}
+
 	return target, nil
 }
 
@@ -68,14 +71,21 @@ func requireProbeTimeout(cfg *opnsensecfg.Config) (time.Duration, error) {
 	if raw == "" {
 		return 0, fmt.Errorf("opnsense: [opnsense.probe].timeout is required in %s", cfg.Source)
 	}
+
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		slog.Error("opnsense: parse probe timeout", "err", err, "value", raw)
-		return 0, fmt.Errorf("opnsense: [opnsense.probe].timeout %q is not a Go duration: %w", raw, err)
+		return 0, fmt.Errorf(
+			"opnsense: [opnsense.probe].timeout %q is not a Go duration: %w",
+			raw,
+			err,
+		)
 	}
+
 	if d <= 0 {
 		return 0, fmt.Errorf("opnsense: [opnsense.probe].timeout %q must be positive", raw)
 	}
+
 	return d, nil
 }
 
@@ -95,14 +105,24 @@ func requireProbeTransferStall(cfg *opnsensecfg.Config) (time.Duration, error) {
 	if raw == "" {
 		return probeTransferStallDefault, nil
 	}
+
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		slog.Error("opnsense: parse probe transfer_stall_timeout", "err", err, "value", raw)
-		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q is not a Go duration: %w", raw, err)
+		return 0, fmt.Errorf(
+			"opnsense: [opnsense.probe].transfer_stall_timeout %q is not a Go duration: %w",
+			raw,
+			err,
+		)
 	}
+
 	if d <= 0 {
-		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q must be positive", raw)
+		return 0, fmt.Errorf(
+			"opnsense: [opnsense.probe].transfer_stall_timeout %q must be positive",
+			raw,
+		)
 	}
+
 	return d, nil
 }
 
@@ -111,8 +131,12 @@ func requireProbeTransferStall(cfg *opnsensecfg.Config) (time.Duration, error) {
 func requireProbeUploadChunk(cfg *opnsensecfg.Config) (int, error) {
 	chunk := cfg.OPNsense.Probe.UploadChunkBytes
 	if chunk <= 0 {
-		return 0, fmt.Errorf("opnsense: [opnsense.probe].upload_chunk_bytes must be > 0 in %s", cfg.Source)
+		return 0, fmt.Errorf(
+			"opnsense: [opnsense.probe].upload_chunk_bytes must be > 0 in %s",
+			cfg.Source,
+		)
 	}
+
 	return chunk, nil
 }
 
@@ -122,6 +146,7 @@ func requireHostUpstream(cfg *opnsensecfg.Config) (string, error) {
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.host].upstream is required in %s", cfg.Source)
 	}
+
 	return v, nil
 }
 
@@ -131,6 +156,7 @@ func requireHostListen(cfg *opnsensecfg.Config) (string, error) {
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.host].listen is required in %s", cfg.Source)
 	}
+
 	return v, nil
 }
 
@@ -140,6 +166,7 @@ func requireDrainChardev(cfg *opnsensecfg.Config) (string, error) {
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.drain].chardev is required in %s", cfg.Source)
 	}
+
 	return v, nil
 }
 
@@ -151,31 +178,54 @@ func requireDrainListen(cfg *opnsensecfg.Config) (string, error) {
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.drain].listen is required in %s", cfg.Source)
 	}
+
 	if strings.HasPrefix(v, "unix://") {
-		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path, not a unix:// URL", v)
+		return "", fmt.Errorf(
+			"opnsense: [opnsense.drain].listen %q must be an absolute path, not a unix:// URL",
+			v,
+		)
 	}
+
 	if !filepath.IsAbs(v) {
 		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path", v)
 	}
+
 	return v, nil
 }
 
 // parseHostDurations returns reconnect, heartbeat-interval, and
 // heartbeat-timeout from the [opnsense.host] section. An empty string
 // means the field is absent from TOML, which is a hard error.
-func parseHostDurations(cfg *opnsensecfg.Config) (reconnect, hbInterval, hbTimeout time.Duration, err error) {
-	reconnect, err = parseRequiredDuration(cfg, cfg.OPNsense.Host.ReconnectDuration, "[opnsense.host].reconnect")
+func parseHostDurations(
+	cfg *opnsensecfg.Config,
+) (reconnect, hbInterval, hbTimeout time.Duration, err error) {
+	reconnect, err = parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Host.ReconnectDuration,
+		"[opnsense.host].reconnect",
+	)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	hbInterval, err = parseRequiredDuration(cfg, cfg.OPNsense.Host.HeartbeatIntervalDuration, "[opnsense.host].heartbeat_interval")
+
+	hbInterval, err = parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Host.HeartbeatIntervalDuration,
+		"[opnsense.host].heartbeat_interval",
+	)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	hbTimeout, err = parseRequiredDuration(cfg, cfg.OPNsense.Host.HeartbeatTimeoutDuration, "[opnsense.host].heartbeat_timeout")
+
+	hbTimeout, err = parseRequiredDuration(
+		cfg,
+		cfg.OPNsense.Host.HeartbeatTimeoutDuration,
+		"[opnsense.host].heartbeat_timeout",
+	)
 	if err != nil {
 		return 0, 0, 0, err
 	}
+
 	return reconnect, hbInterval, hbTimeout, nil
 }
 
@@ -188,11 +238,13 @@ func parseRequiredDuration(cfg *opnsensecfg.Config, raw, key string) (time.Durat
 	if raw == "" {
 		return 0, fmt.Errorf("opnsense: %s is required in %s", key, cfg.Source)
 	}
+
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		slog.Error("opnsense: parse duration", "err", err, "key", key, "value", raw)
 		return 0, fmt.Errorf("opnsense: %s %q is not a Go duration: %w", key, raw, err)
 	}
+
 	return d, nil
 }
 
@@ -202,6 +254,7 @@ func requireUpgradeVMID(cfg *opnsensecfg.Config) (string, error) {
 	if cfg.OPNsense.Upgrade.VMID <= 0 {
 		return "", fmt.Errorf("opnsense: [opnsense.upgrade].vmid is required in %s", cfg.Source)
 	}
+
 	return strconv.Itoa(cfg.OPNsense.Upgrade.VMID), nil
 }
 
@@ -209,8 +262,12 @@ func requireUpgradeVMID(cfg *opnsensecfg.Config) (string, error) {
 func requireUpgradeStateDir(cfg *opnsensecfg.Config) (string, error) {
 	v := strings.TrimSpace(cfg.OPNsense.Upgrade.StateDir)
 	if v == "" {
-		return "", fmt.Errorf("opnsense: [opnsense.upgrade].state_dir is required in %s", cfg.Source)
+		return "", fmt.Errorf(
+			"opnsense: [opnsense.upgrade].state_dir is required in %s",
+			cfg.Source,
+		)
 	}
+
 	return v, nil
 }
 
@@ -219,7 +276,11 @@ func requireUpgradeStateDir(cfg *opnsensecfg.Config) (string, error) {
 func requireUpgradeGRPCTarget(cfg *opnsensecfg.Config) (string, error) {
 	v := strings.TrimSpace(cfg.OPNsense.Upgrade.EnvGRPCTarget)
 	if v == "" {
-		return "", fmt.Errorf("opnsense: [opnsense.upgrade].env_grpc_target is required in %s", cfg.Source)
+		return "", fmt.Errorf(
+			"opnsense: [opnsense.upgrade].env_grpc_target is required in %s",
+			cfg.Source,
+		)
 	}
+
 	return v, nil
 }

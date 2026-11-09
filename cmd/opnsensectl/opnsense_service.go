@@ -31,9 +31,11 @@ type serviceCommand struct {
 func (c serviceCommand) usage(out io.Writer) {
 	fmt.Fprintf(out, "usage: opnsensectl %s --%s PATH\n", c.name, serviceConfigFlag)
 	fmt.Fprintln(out, "")
+
 	for _, line := range c.description {
 		fmt.Fprintln(out, line)
 	}
+
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "  --%s PATH   required; %s\n", serviceConfigFlag, c.configDoc)
 	fmt.Fprintln(out, "")
@@ -41,7 +43,9 @@ func (c serviceCommand) usage(out io.Writer) {
 		fmt.Fprintln(out, "Required environment: none.")
 		return
 	}
+
 	fmt.Fprintln(out, "Required environment:")
+
 	for _, env := range c.environment {
 		fmt.Fprintf(out, "  %s   %s\n", env.name, env.purpose)
 	}
@@ -56,6 +60,7 @@ func parseServiceArgs(cmd serviceCommand, args []string) (string, int, bool) {
 		cmd.usage(os.Stdout)
 		return "", 0, false
 	}
+
 	flags := flag.NewFlagSet(cmd.name, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	configPath := flags.String(serviceConfigFlag, "", "")
@@ -64,20 +69,32 @@ func parseServiceArgs(cmd serviceCommand, args []string) (string, int, bool) {
 			cmd.usage(os.Stdout)
 			return "", 0, false
 		}
+
 		return "", cmd.fail(err.Error()), false
 	}
+
 	if flags.NArg() > 0 {
 		return "", cmd.fail(fmt.Sprintf("unexpected arguments: %v", flags.Args())), false
 	}
+
 	path := strings.TrimSpace(*configPath)
 	if path == "" {
-		return "", cmd.fail(fmt.Sprintf("--%s PATH is required; there is no default config file", serviceConfigFlag)), false
+		return "", cmd.fail(
+			fmt.Sprintf(
+				"--%s PATH is required; there is no default config file",
+				serviceConfigFlag,
+			),
+		), false
 	}
+
 	for _, env := range cmd.environment {
 		if strings.TrimSpace(os.Getenv(env.name)) == "" {
-			return "", cmd.fail(fmt.Sprintf("environment variable %s is required: %s", env.name, env.purpose)), false
+			return "", cmd.fail(
+				fmt.Sprintf("environment variable %s is required: %s", env.name, env.purpose),
+			), false
 		}
 	}
+
 	return path, 0, true
 }
 
@@ -86,5 +103,6 @@ func parseServiceArgs(cmd serviceCommand, args []string) (string, int, bool) {
 func (c serviceCommand) fail(message string) int {
 	fmt.Fprintf(os.Stderr, "opnsensectl %s: %s\n\n", c.name, message)
 	c.usage(os.Stderr)
+
 	return 2
 }
