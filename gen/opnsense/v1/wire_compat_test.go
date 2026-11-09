@@ -128,13 +128,27 @@ func readRecordedWire(t *testing.T) map[string][]byte {
 // renderMethods lists every server handler and client method path.
 func renderMethods() string {
 	var lines []string
-	for _, desc := range []grpc.ServiceDesc{pb.OpnsenseService_ServiceDesc, pb.TransferService_ServiceDesc} {
+	for _, desc := range []grpc.ServiceDesc{
+		pb.OpnsenseService_ServiceDesc,
+		pb.TransferService_ServiceDesc,
+	} {
 		for _, method := range desc.Methods {
-			lines = append(lines, fmt.Sprintf("server /%s/%s unary", desc.ServiceName, method.MethodName))
+			lines = append(
+				lines,
+				fmt.Sprintf("server /%s/%s unary", desc.ServiceName, method.MethodName),
+			)
 		}
 		for _, stream := range desc.Streams {
-			lines = append(lines, fmt.Sprintf("server /%s/%s client_streams=%t server_streams=%t",
-				desc.ServiceName, stream.StreamName, stream.ClientStreams, stream.ServerStreams))
+			lines = append(
+				lines,
+				fmt.Sprintf(
+					"server /%s/%s client_streams=%t server_streams=%t",
+					desc.ServiceName,
+					stream.StreamName,
+					stream.ClientStreams,
+					stream.ServerStreams,
+				),
+			)
 		}
 	}
 	for _, path := range clientMethodPaths() {
@@ -192,84 +206,151 @@ func wireCases() map[string]proto.Message {
 			BuildDirty:   true,
 			BuildBinhash: "sha256:feedface",
 		},
-		"ExecRequest_Header": &pb.ExecRequest{Body: &pb.ExecRequest_Header{Header: &pb.ExecHeader{
-			Command:        "/usr/local/sbin/configctl",
-			Args:           []string{"filter", "reload", ""},
-			Sudo:           true,
-			TimeoutSeconds: 30,
-		}}},
-		"ExecRequest_StdinChunk":   &pb.ExecRequest{Body: &pb.ExecRequest_StdinChunk{StdinChunk: []byte{0x00, 0x01, 0xff, '\n'}}},
-		"ExecRequest_StdinClose":   &pb.ExecRequest{Body: &pb.ExecRequest_StdinClose{StdinClose: true}},
-		"ExecRequest_Cancel":       &pb.ExecRequest{Body: &pb.ExecRequest_Cancel{Cancel: &pb.ExecCancel{}}},
-		"ExecResponse_StdoutChunk": &pb.ExecResponse{Body: &pb.ExecResponse_StdoutChunk{StdoutChunk: []byte("stdout\n")}},
-		"ExecResponse_StderrChunk": &pb.ExecResponse{Body: &pb.ExecResponse_StderrChunk{StderrChunk: []byte("stderr\n")}},
-		"ExecResponse_Terminal": &pb.ExecResponse{Body: &pb.ExecResponse_Terminal{Terminal: &pb.ExecTerminal{
-			ExitCode:        -1,
-			DurationMs:      1234567890123,
-			StdoutTruncated: true,
-			StderrTruncated: true,
-			TimedOut:        true,
-		}}},
-		"XPathMatch":              &pb.XPathMatch{Match: "<gateway>WAN_GW</gateway>"},
-		"XPathGetRequest":         &pb.XPathGetRequest{Expression: "//gateways/gateway_item"},
-		"XPathSetRequest":         &pb.XPathSetRequest{Expression: "//system/hostname", NewValue: "router"},
-		"XPathSetResponse":        &pb.XPathSetResponse{BackupPath: "/conf/backup/config-1.xml", ChangedCount: 2},
-		"XPathDeleteRequest":      &pb.XPathDeleteRequest{Expression: "//staticroutes/route"},
-		"XPathDeleteResponse":     &pb.XPathDeleteResponse{BackupPath: "/conf/backup/config-2.xml", DeletedCount: 3},
-		"BackupConfigXMLRequest":  &pb.BackupConfigXMLRequest{Label: "pre-upgrade"},
-		"BackupConfigXMLResponse": &pb.BackupConfigXMLResponse{BackupPath: "/conf/backup/config-3.xml", SizeBytes: 987654},
-		"StripGatewayV6Request":   &pb.StripGatewayV6Request{},
-		"StripGatewayV6Response":  &pb.StripGatewayV6Response{BackupPath: "/conf/backup/config-4.xml", Changed: true},
-		"InjectGatewayV6Request":  &pb.InjectGatewayV6Request{GatewayName: "WAN_GW6"},
-		"InjectGatewayV6Response": &pb.InjectGatewayV6Response{BackupPath: "/conf/backup/config-5.xml", Changed: true},
-		"DeployStatusRequest":     &pb.DeployStatusRequest{Mark: pb.DeployStatusRequest_MARK_HEALTHY},
+		"ExecRequest_Header": &pb.ExecRequest{
+			Body: &pb.ExecRequest_Header{
+				Header: &pb.ExecHeader{
+					Command:        "/usr/local/sbin/configctl",
+					Args:           []string{"filter", "reload", ""},
+					Sudo:           true,
+					TimeoutSeconds: 30,
+				},
+			},
+		},
+		"ExecRequest_StdinChunk": &pb.ExecRequest{
+			Body: &pb.ExecRequest_StdinChunk{StdinChunk: []byte{0x00, 0x01, 0xff, '\n'}},
+		},
+		"ExecRequest_StdinClose": &pb.ExecRequest{
+			Body: &pb.ExecRequest_StdinClose{StdinClose: true},
+		},
+		"ExecRequest_Cancel": &pb.ExecRequest{
+			Body: &pb.ExecRequest_Cancel{Cancel: &pb.ExecCancel{}},
+		},
+		"ExecResponse_StdoutChunk": &pb.ExecResponse{
+			Body: &pb.ExecResponse_StdoutChunk{StdoutChunk: []byte("stdout\n")},
+		},
+		"ExecResponse_StderrChunk": &pb.ExecResponse{
+			Body: &pb.ExecResponse_StderrChunk{StderrChunk: []byte("stderr\n")},
+		},
+		"ExecResponse_Terminal": &pb.ExecResponse{
+			Body: &pb.ExecResponse_Terminal{
+				Terminal: &pb.ExecTerminal{
+					ExitCode:        -1,
+					DurationMs:      1234567890123,
+					StdoutTruncated: true,
+					StderrTruncated: true,
+					TimedOut:        true,
+				},
+			},
+		},
+		"XPathMatch":      &pb.XPathMatch{Match: "<gateway>WAN_GW</gateway>"},
+		"XPathGetRequest": &pb.XPathGetRequest{Expression: "//gateways/gateway_item"},
+		"XPathSetRequest": &pb.XPathSetRequest{
+			Expression: "//system/hostname",
+			NewValue:   "router",
+		},
+		"XPathSetResponse": &pb.XPathSetResponse{
+			BackupPath:   "/conf/backup/config-1.xml",
+			ChangedCount: 2,
+		},
+		"XPathDeleteRequest": &pb.XPathDeleteRequest{Expression: "//staticroutes/route"},
+		"XPathDeleteResponse": &pb.XPathDeleteResponse{
+			BackupPath:   "/conf/backup/config-2.xml",
+			DeletedCount: 3,
+		},
+		"BackupConfigXMLRequest": &pb.BackupConfigXMLRequest{Label: "pre-upgrade"},
+		"BackupConfigXMLResponse": &pb.BackupConfigXMLResponse{
+			BackupPath: "/conf/backup/config-3.xml",
+			SizeBytes:  987654,
+		},
+		"StripGatewayV6Request": &pb.StripGatewayV6Request{},
+		"StripGatewayV6Response": &pb.StripGatewayV6Response{
+			BackupPath: "/conf/backup/config-4.xml",
+			Changed:    true,
+		},
+		"InjectGatewayV6Request": &pb.InjectGatewayV6Request{GatewayName: "WAN_GW6"},
+		"InjectGatewayV6Response": &pb.InjectGatewayV6Response{
+			BackupPath: "/conf/backup/config-5.xml",
+			Changed:    true,
+		},
+		"DeployStatusRequest": &pb.DeployStatusRequest{
+			Mark: pb.DeployStatusRequest_MARK_HEALTHY,
+		},
 		"DeployStatusResponse": &pb.DeployStatusResponse{
 			ActiveSha256:   "aa",
 			PreviousSha256: "bb",
 			Health:         "healthy",
 			DeployedAt:     1789371623,
 		},
-		"RevertRequest":         &pb.RevertRequest{},
-		"RevertResponse":        &pb.RevertResponse{RevertedToSha256: "cc"},
-		"StageBinaryRequest":    &pb.StageBinaryRequest{StagedSha256: "dd", VersionStr: "v9"},
-		"StageBinaryResponse":   &pb.StageBinaryResponse{PreviousPath: "/usr/local/bin/mwan.prev", ActiveSha256: "ee"},
+		"RevertRequest":      &pb.RevertRequest{},
+		"RevertResponse":     &pb.RevertResponse{RevertedToSha256: "cc"},
+		"StageBinaryRequest": &pb.StageBinaryRequest{StagedSha256: "dd", VersionStr: "v9"},
+		"StageBinaryResponse": &pb.StageBinaryResponse{
+			PreviousPath: "/usr/local/bin/mwan.prev",
+			ActiveSha256: "ee",
+		},
 		"RestartDaemonRequest":  &pb.RestartDaemonRequest{},
 		"RestartDaemonResponse": &pb.RestartDaemonResponse{},
-		"UploadRequest_Header": &pb.UploadRequest{Body: &pb.UploadRequest_Header{Header: &pb.TransferHeader{
-			Path:             "/usr/local/bin/mwan",
-			Direction:        pb.TransferDirection_TRANSFER_DIRECTION_WRITE,
-			FinishStep:       pb.FinishStep_FINISH_STEP_STAGE,
-			ResumeTransferId: "transfer-1",
-			ResumeFromOffset: 4096,
-			Label:            "deploy",
-			TotalSize:        1 << 33,
-		}}},
-		"UploadRequest_Data": &pb.UploadRequest{Body: &pb.UploadRequest_Data{Data: &pb.TransferDataChunk{
-			Offset: 8192,
-			Data:   []byte{0xde, 0xad, 0xbe, 0xef},
-		}}},
-		"UploadRequest_Final":  &pb.UploadRequest{Body: &pb.UploadRequest_Final{Final: &pb.TransferFinal{Sha256Hex: "ff"}}},
-		"UploadRequest_Cancel": &pb.UploadRequest{Body: &pb.UploadRequest_Cancel{Cancel: &pb.TransferCancel{}}},
-		"UploadResponse_Ack": &pb.UploadResponse{Body: &pb.UploadResponse_Ack{Ack: &pb.TransferAck{
-			TransferId:      "transfer-2",
-			TotalBytes:      65536,
-			ResumeAccepted:  true,
-			CommittedOffset: 32768,
-		}}},
-		"UploadResponse_Data": &pb.UploadResponse{Body: &pb.UploadResponse_Data{Data: &pb.TransferDataChunk{
-			Offset: 1,
-			Data:   []byte("chunk"),
-		}}},
-		"UploadResponse_Terminal": &pb.UploadResponse{Body: &pb.UploadResponse_Terminal{Terminal: &pb.TransferTerminal{
-			Sha256Hex:     "0f",
-			TotalBytes:    77,
-			BackupPath:    "/var/backups/mwan",
-			StatusCode:    -2,
-			StatusMessage: "staged",
-			StagedPath:    "/usr/local/bin/mwan.staged",
-		}}},
-		"UploadResponse_DataAck": &pb.UploadResponse{Body: &pb.UploadResponse_DataAck{DataAck: &pb.TransferDataAck{CommittedOffset: 9}}},
-		"StatusRequest":          &pb.StatusRequest{TransferId: "transfer-3"},
+		"UploadRequest_Header": &pb.UploadRequest{
+			Body: &pb.UploadRequest_Header{
+				Header: &pb.TransferHeader{
+					Path:             "/usr/local/bin/mwan",
+					Direction:        pb.TransferDirection_TRANSFER_DIRECTION_WRITE,
+					FinishStep:       pb.FinishStep_FINISH_STEP_STAGE,
+					ResumeTransferId: "transfer-1",
+					ResumeFromOffset: 4096,
+					Label:            "deploy",
+					TotalSize:        1 << 33,
+				},
+			},
+		},
+		"UploadRequest_Data": &pb.UploadRequest{
+			Body: &pb.UploadRequest_Data{
+				Data: &pb.TransferDataChunk{
+					Offset: 8192,
+					Data:   []byte{0xde, 0xad, 0xbe, 0xef},
+				},
+			},
+		},
+		"UploadRequest_Final": &pb.UploadRequest{
+			Body: &pb.UploadRequest_Final{Final: &pb.TransferFinal{Sha256Hex: "ff"}},
+		},
+		"UploadRequest_Cancel": &pb.UploadRequest{
+			Body: &pb.UploadRequest_Cancel{Cancel: &pb.TransferCancel{}},
+		},
+		"UploadResponse_Ack": &pb.UploadResponse{
+			Body: &pb.UploadResponse_Ack{
+				Ack: &pb.TransferAck{
+					TransferId:      "transfer-2",
+					TotalBytes:      65536,
+					ResumeAccepted:  true,
+					CommittedOffset: 32768,
+				},
+			},
+		},
+		"UploadResponse_Data": &pb.UploadResponse{
+			Body: &pb.UploadResponse_Data{
+				Data: &pb.TransferDataChunk{
+					Offset: 1,
+					Data:   []byte("chunk"),
+				},
+			},
+		},
+		"UploadResponse_Terminal": &pb.UploadResponse{
+			Body: &pb.UploadResponse_Terminal{
+				Terminal: &pb.TransferTerminal{
+					Sha256Hex:     "0f",
+					TotalBytes:    77,
+					BackupPath:    "/var/backups/mwan",
+					StatusCode:    -2,
+					StatusMessage: "staged",
+					StagedPath:    "/usr/local/bin/mwan.staged",
+				},
+			},
+		},
+		"UploadResponse_DataAck": &pb.UploadResponse{
+			Body: &pb.UploadResponse_DataAck{DataAck: &pb.TransferDataAck{CommittedOffset: 9}},
+		},
+		"StatusRequest": &pb.StatusRequest{TransferId: "transfer-3"},
 		"StatusResponse": &pb.StatusResponse{
 			TransferId:      "transfer-3",
 			Exists:          true,
