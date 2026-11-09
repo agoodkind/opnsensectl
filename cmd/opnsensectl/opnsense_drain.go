@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"goodkind.io/opnsensectl/internal/cli"
+
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/coreos/go-systemd/v22/daemon"
 )
@@ -350,6 +352,7 @@ func acquireListener(
 			"err",
 			err,
 		)
+
 		return nil, fmt.Errorf("clear stale relay socket: %w", err)
 	}
 
@@ -658,21 +661,5 @@ func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan drainChunk) {
 // spawn runs fn in a goroutine with a recover that logs any panic, so one
 // broken relay connection never crashes the drainer.
 func spawn(ctx context.Context, log *slog.Logger, where string, fn func()) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.ErrorContext(
-					ctx,
-					"opnsense drain: goroutine panic",
-					"where",
-					where,
-					"panic",
-					r,
-					"err",
-					fmt.Errorf("panic: %v", r),
-				)
-			}
-		}()
-		fn()
-	}()
+	cli.Spawn(ctx, log, where, fn)
 }

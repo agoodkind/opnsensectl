@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"goodkind.io/opnsensectl/internal/cli"
+
 	opnsensecfg "goodkind.io/opnsensectl/internal/config"
 	opnsensenotify "goodkind.io/opnsensectl/internal/notify"
 	"goodkind.io/opnsensectl/internal/opnsense"
@@ -105,15 +107,7 @@ type upgradeInputs struct {
 // rollback drops the gRPC channel), so plain opnsense.Dial is the
 // right primitive here.
 func buildRedial(target string) func() (upgrade.OPNsenseRPCClient, error) {
-	return func() (upgrade.OPNsenseRPCClient, error) {
-		c, err := opnsense.Dial(target)
-		if err != nil {
-			slog.Error("opnsense upgrade: redial", "err", err, "target", target)
-			return nil, fmt.Errorf("dial %s: %w", target, err)
-		}
-
-		return c.RPC(), nil
-	}
+	return cli.Redial(target)
 }
 
 func resolveUpgradeInputs() (upgradeInputs, error) {
