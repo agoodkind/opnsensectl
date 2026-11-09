@@ -81,13 +81,13 @@ func loadStateCtx(ctx context.Context, stateDir, vmid string) (State, error) {
 		return zero, fmt.Errorf("upgrade: read state %q: %w", path, err)
 	}
 
-	var st State
-	if err := json.Unmarshal(data, &st); err != nil {
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
 		slog.ErrorContext(ctx, "upgrade: parse state", "err", err, "path", path)
 		return zero, fmt.Errorf("upgrade: parse state %q: %w", path, err)
 	}
 
-	return st, nil
+	return state, nil
 }
 
 // saveStateCtx writes the state file atomically. The parent directory
@@ -211,15 +211,15 @@ var allowedTransitions = map[Phase]map[Phase]struct{}{
 // `from` to `to`. The state machine is deliberately strict: any
 // transition not enumerated in allowedTransitions is rejected, so a
 // careless re-run cannot land the system in an inconsistent state.
-func CanTransition(from, to Phase) bool {
-	allowed, ok := allowedTransitions[from]
-	if !ok {
+func CanTransition(from, target Phase) bool {
+	allowed, exists := allowedTransitions[from]
+	if !exists {
 		return false
 	}
 
-	_, ok = allowed[to]
+	_, exists = allowed[target]
 
-	return ok
+	return exists
 }
 
 // TransitionNotAllowedError is returned by [EnforceTransition] when

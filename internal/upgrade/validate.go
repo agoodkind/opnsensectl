@@ -100,38 +100,7 @@ func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationRe
 		return cur, result, err
 	}
 
-	level, msg := validateLevelAndMessage(target, len(failingNames))
-	emit(
-		ctx,
-		deps.Notifier,
-		level,
-		KindValidate,
-		opts.VMID,
-		msg,
-		slog.String("vmid", opts.VMID),
-		slog.String("phase", string(target)),
-		slog.Int("failing_count", len(failingNames)),
-	)
-	if target == PhaseValidatedPass {
-		resolve(
-			ctx,
-			deps.Notifier,
-			KindValidate,
-			opts.VMID,
-			"opnsense-upgrade validate: all checks passed",
-		)
-	}
-
-	slog.InfoContext(
-		ctx,
-		"upgrade.Validate: complete",
-		"vmid",
-		opts.VMID,
-		"phase",
-		target,
-		"failing",
-		len(failingNames),
-	)
+	notifyValidatedState(ctx, deps, opts, target, failingNames)
 
 	return cur, result, nil
 }
@@ -233,4 +202,45 @@ func AggregateChecks(checks []CheckResult) ValidationResult {
 // the error path.
 func emptyValidation() ValidationResult {
 	return ValidationResult{Checks: nil, AllPass: false, AnyFail: false, Partial: false}
+}
+
+func notifyValidatedState(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	target Phase,
+	failingNames []string,
+) {
+	level, msg := validateLevelAndMessage(target, len(failingNames))
+	emit(
+		ctx,
+		deps.Notifier,
+		level,
+		KindValidate,
+		opts.VMID,
+		msg,
+		slog.String("vmid", opts.VMID),
+		slog.String("phase", string(target)),
+		slog.Int("failing_count", len(failingNames)),
+	)
+	if target == PhaseValidatedPass {
+		resolve(
+			ctx,
+			deps.Notifier,
+			KindValidate,
+			opts.VMID,
+			"opnsense-upgrade validate: all checks passed",
+		)
+	}
+
+	slog.InfoContext(
+		ctx,
+		"upgrade.Validate: complete",
+		"vmid",
+		opts.VMID,
+		"phase",
+		target,
+		"failing",
+		len(failingNames),
+	)
 }

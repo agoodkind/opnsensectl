@@ -682,14 +682,14 @@ func (s *Server) RestartDaemon(
 	s.log.InfoContext(ctx, "opnsensesvc: RestartDaemon requested")
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
+			if recovered := recover(); recovered != nil {
 				s.log.ErrorContext(
 					ctx,
 					"opnsensesvc: RestartDaemon hook panic",
 					"panic",
-					r,
+					recovered,
 					"err",
-					fmt.Errorf("panic: %v", r),
+					fmt.Errorf("%w: %v", errRecoveredPanic, recovered),
 				)
 			}
 		}()

@@ -128,28 +128,9 @@ func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 	//
 	// This condition covers PhaseCommitted only. On PhaseValidatedPass
 	// reset still plans a rollback that [rollbackAllowedFrom] refuses.
-	rollbackTarget := ""
-	if stateExists && st.Snapshot != "" && st.Phase != PhaseCommitted {
-		rollbackTarget = st.Snapshot
-		if !slices.Contains(names, rollbackTarget) {
-			err := fmt.Errorf(
-				"upgrade.Reset: recorded baseline snapshot %q not present on vm %s; refusing to delete anything, investigate manually",
-				rollbackTarget,
-				opts.VMID,
-			)
-			slog.ErrorContext(
-				ctx,
-				"upgrade.Reset: missing baseline",
-				"err",
-				err,
-				"vmid",
-				opts.VMID,
-				"snapshot",
-				rollbackTarget,
-			)
-
-			return Plan{}, err
-		}
+	rollbackTarget, err := resetRollbackTarget(ctx, opts, stateExists, st, names)
+	if err != nil {
+		return Plan{}, err
 	}
 
 	toDelete := make([]string, 0, len(upgradeSnaps))
@@ -212,39 +193,8 @@ func ResetExecute(ctx context.Context, deps Deps, plan Plan) error {
 		return err
 	}
 
-	deleted := make([]string, 0, len(plan.SnapshotsToDelete))
-	for _, snap := range plan.SnapshotsToDelete {
-		if err := deps.Snap.VMDelSnapshot(ctx, plan.VMID, snap); err != nil {
-			slog.ErrorContext(
-				ctx,
-				"upgrade.ResetExecute: VMDelSnapshot",
-				"err",
-				err,
-				"vmid",
-				plan.VMID,
-				"snapshot",
-				snap,
-				"deleted_before_failure",
-				deleted,
-			)
-
-			return fmt.Errorf("upgrade.ResetExecute: delete %q: %w", snap, err)
-		}
-
-		deleted = append(deleted, snap)
-	}
-
-	if len(deleted) > 0 {
-		slog.InfoContext(
-			ctx,
-			"upgrade.ResetExecute: snapshots deleted",
-			"vmid",
-			plan.VMID,
-			"count",
-			len(deleted),
-			"snapshots",
-			deleted,
-		)
+	if err := deleteResetSnapshots(ctx, deps, plan); err != nil {
+		return err
 	}
 
 	if plan.RollbackTarget != "" {
@@ -364,4 +314,78 @@ func mostRecentDeployDir(ctx context.Context, stateDir, vmid string) (string, er
 	}
 
 	return newestName, nil
+}
+
+func resetRollbackTarget(
+	ctx context.Context,
+	opts ResetOptions,
+	stateExists bool,
+	st State,
+	names []string,
+) (string, error) {
+	rollbackTarget := ""
+	if stateExists && st.Snapshot != "" && st.Phase != PhaseCommitted {
+		rollbackTarget = st.Snapshot
+		if !slices.Contains(names, rollbackTarget) {
+			err := fmt.Errorf(
+				"upgrade.Reset: recorded baseline snapshot %q not present on vm %s; "+
+					"refusing to delete anything, investigate manually",
+				rollbackTarget,
+				opts.VMID,
+			)
+			slog.ErrorContext(
+				ctx,
+				"upgrade.Reset: missing baseline",
+				"err",
+				err,
+				"vmid",
+				opts.VMID,
+				"snapshot",
+				rollbackTarget,
+			)
+
+			return "", err
+		}
+	}
+
+	return rollbackTarget, nil
+}
+
+func deleteResetSnapshots(ctx context.Context, deps Deps, plan Plan) error {
+	deleted := make([]string, 0, len(plan.SnapshotsToDelete))
+	for _, snap := range plan.SnapshotsToDelete {
+		if err := deps.Snap.VMDelSnapshot(ctx, plan.VMID, snap); err != nil {
+			slog.ErrorContext(
+				ctx,
+				"upgrade.ResetExecute: VMDelSnapshot",
+				"err",
+				err,
+				"vmid",
+				plan.VMID,
+				"snapshot",
+				snap,
+				"deleted_before_failure",
+				deleted,
+			)
+
+			return fmt.Errorf("upgrade.ResetExecute: delete %q: %w", snap, err)
+		}
+
+		deleted = append(deleted, snap)
+	}
+
+	if len(deleted) > 0 {
+		slog.InfoContext(
+			ctx,
+			"upgrade.ResetExecute: snapshots deleted",
+			"vmid",
+			plan.VMID,
+			"count",
+			len(deleted),
+			"snapshots",
+			deleted,
+		)
+	}
+
+	return nil
 }

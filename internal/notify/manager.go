@@ -32,13 +32,13 @@ type alertState struct {
 func (m *Manager) Notify(ctx context.Context, event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := alertID(event.Kind, event.Key)
-	current, exists := m.state[id]
+	alertKey := alertID(event.Kind, event.Key)
+	current, exists := m.state[alertKey]
 	if exists && current.active {
 		return
 	}
 
-	m.state[id] = alertState{active: true, lastLevel: event.Level}
+	m.state[alertKey] = alertState{active: true, lastLevel: event.Level}
 	attrs := alertAttrs(event.Kind, event.Key, slog.Bool("transition", true), event.Fields)
 	m.emit(ctx, event.Level, event.Kind, event.Key, event.Message, attrs)
 }
@@ -48,13 +48,13 @@ func (m *Manager) Notify(ctx context.Context, event Event) {
 func (m *Manager) Resolve(ctx context.Context, kind, key, message string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := alertID(kind, key)
-	current, exists := m.state[id]
+	alertKey := alertID(kind, key)
+	current, exists := m.state[alertKey]
 	if !exists || !current.active {
 		return
 	}
 
-	m.state[id] = alertState{active: false, lastLevel: current.lastLevel}
+	m.state[alertKey] = alertState{active: false, lastLevel: current.lastLevel}
 	level := current.lastLevel
 	// slog.LevelInfo is the zero Level, so an alert raised at INFO resolves at
 	// WARN, which is also how the gateway notifier resolves one.

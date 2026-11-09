@@ -402,47 +402,8 @@ func (r *RPC) WriteConfigXML(
 	}
 
 	_ = ack
-	const chunkSize = 16 << 10
-
-	offset := int64(0)
-	for offset < int64(len(content)) {
-		end := min(offset+chunkSize, int64(len(content)))
-		if sendErr := stream.Send(&mwanv1.UploadRequest{
-			Body: &mwanv1.UploadRequest_Data{
-				Data: &mwanv1.TransferDataChunk{
-					Offset: offset,
-					Data:   content[offset:end],
-				},
-			},
-		}); sendErr != nil {
-			return nil, logWrap(ctx, r.c.log, "WriteConfigXML send data", sendErr)
-		}
-
-		ackMsg, recvAckErr := stream.Recv()
-		if recvAckErr != nil {
-			return nil, logWrap(ctx, r.c.log, "WriteConfigXML recv data ack", recvAckErr)
-		}
-
-		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
-		if !ok {
-			return nil, logWrap(
-				ctx,
-				r.c.log,
-				"WriteConfigXML expected data ack",
-				fmt.Errorf("got %T", ackMsg.GetBody()),
-			)
-		}
-
-		if dataAck.DataAck.GetCommittedOffset() != end {
-			return nil, logWrap(
-				ctx,
-				r.c.log,
-				"WriteConfigXML data ack offset",
-				fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end),
-			)
-		}
-
-		offset = end
+	if err := r.sendConfigChunks(ctx, stream, content); err != nil {
+		return nil, err
 	}
 
 	sum := sha256.Sum256(content)
@@ -474,4 +435,55 @@ func (r *RPC) WriteConfigXML(
 			}, nil
 		}
 	}
+}
+
+func (r *RPC) sendConfigChunks(
+	ctx context.Context,
+	stream mwanv1.TransferService_UploadClient,
+	content []byte,
+) error {
+	const chunkSize = 16 << 10
+
+	offset := int64(0)
+	for offset < int64(len(content)) {
+		end := min(offset+chunkSize, int64(len(content)))
+		if sendErr := stream.Send(&mwanv1.UploadRequest{
+			Body: &mwanv1.UploadRequest_Data{
+				Data: &mwanv1.TransferDataChunk{
+					Offset: offset,
+					Data:   content[offset:end],
+				},
+			},
+		}); sendErr != nil {
+			return logWrap(ctx, r.c.log, "WriteConfigXML send data", sendErr)
+		}
+
+		ackMsg, recvAckErr := stream.Recv()
+		if recvAckErr != nil {
+			return logWrap(ctx, r.c.log, "WriteConfigXML recv data ack", recvAckErr)
+		}
+
+		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
+		if !ok {
+			return logWrap(
+				ctx,
+				r.c.log,
+				"WriteConfigXML expected data ack",
+				fmt.Errorf("got %T", ackMsg.GetBody()),
+			)
+		}
+
+		if dataAck.DataAck.GetCommittedOffset() != end {
+			return logWrap(
+				ctx,
+				r.c.log,
+				"WriteConfigXML data ack offset",
+				fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end),
+			)
+		}
+
+		offset = end
+	}
+
+	return nil
 }

@@ -208,39 +208,9 @@ func (d *DeployManager) DeployFromPath(
 		return "", "", err
 	}
 
-	info, statErr := os.Stat(srcPath)
-	if statErr != nil {
-		d.log.ErrorContext(ctx, "deploy: stat src failed", "err", statErr, "path", srcPath)
-		return "", "", fmt.Errorf("stat src %s: %w", srcPath, statErr)
-	}
-
-	if info.Size() == 0 {
-		err = errors.New("deploy: empty binary payload")
-		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
-
-		return "", "", err
-	}
-
-	computedHex, hashErr := fileSHA256(srcPath)
-	if hashErr != nil {
-		d.log.ErrorContext(ctx, "deploy: hash src failed", "err", hashErr)
-		return "", "", fmt.Errorf("hash src: %w", hashErr)
-	}
-
-	if !strings.EqualFold(computedHex, sha256Hex) {
-		err = fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
-		d.log.ErrorContext(
-			ctx,
-			"deploy: sha256 mismatch",
-			"err",
-			err,
-			"got",
-			computedHex,
-			"want",
-			sha256Hex,
-		)
-
-		return "", "", err
+	computedHex, verifyErr := d.verifyDeploySource(ctx, srcPath, sha256Hex)
+	if verifyErr != nil {
+		return "", "", verifyErr
 	}
 
 	stagedSHA256 = computedHex
@@ -261,6 +231,7 @@ func (d *DeployManager) DeployFromPath(
 			"to",
 			staged,
 		)
+
 		return "", "", fmt.Errorf("stage rename: %w", renameErr)
 	}
 
@@ -393,6 +364,7 @@ func (d *DeployManager) MarkHealthy(
 			"path",
 			d.cfg.PendingPath,
 		)
+
 		return "", "", 0, fmt.Errorf("remove pending marker: %w", err)
 	}
 
@@ -702,4 +674,47 @@ func fileSHA256(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (d *DeployManager) verifyDeploySource(
+	ctx context.Context,
+	srcPath string,
+	sha256Hex string,
+) (string, error) {
+	info, statErr := os.Stat(srcPath)
+	if statErr != nil {
+		d.log.ErrorContext(ctx, "deploy: stat src failed", "err", statErr, "path", srcPath)
+		return "", fmt.Errorf("stat src %s: %w", srcPath, statErr)
+	}
+
+	if info.Size() == 0 {
+		err := errors.New("deploy: empty binary payload")
+		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+
+		return "", err
+	}
+
+	computedHex, hashErr := fileSHA256(srcPath)
+	if hashErr != nil {
+		d.log.ErrorContext(ctx, "deploy: hash src failed", "err", hashErr)
+		return "", fmt.Errorf("hash src: %w", hashErr)
+	}
+
+	if !strings.EqualFold(computedHex, sha256Hex) {
+		err := fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
+		d.log.ErrorContext(
+			ctx,
+			"deploy: sha256 mismatch",
+			"err",
+			err,
+			"got",
+			computedHex,
+			"want",
+			sha256Hex,
+		)
+
+		return "", err
+	}
+
+	return computedHex, nil
 }

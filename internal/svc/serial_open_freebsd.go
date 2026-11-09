@@ -42,6 +42,7 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	serial, err := os.OpenFile(path, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		log.Warn("opnsensesvc: open serial failed", slog.String("path", path), slog.Any("err", err))
+
 		return nil, fmt.Errorf("OpenVirtioSerial: open %s: %w", path, err)
 	}
 
@@ -49,6 +50,7 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	if err != nil {
 		_ = serial.Close()
 		log.Warn("opnsensesvc: TIOCGETA failed", slog.String("path", path), slog.Any("err", err))
+
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCGETA %s: %w", path, err)
 	}
 
@@ -65,6 +67,7 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	if unix.HUPCL != 0 {
 		terminal.Cflag &^= unix.HUPCL
 	}
+
 	// VMIN=1, VTIME=0 -> blocking read returns as soon as one byte is
 	// available, no inter-byte timeout.
 	terminal.Cc[unix.VMIN] = 1
@@ -79,6 +82,7 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	if err := unix.IoctlSetTermios(int(serial.Fd()), unix.TIOCSETA, terminal); err != nil {
 		_ = serial.Close()
 		log.Warn("opnsensesvc: TIOCSETA failed", slog.String("path", path), slog.Any("err", err))
+
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCSETA %s: %w", path, err)
 	}
 
@@ -92,6 +96,7 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	if err := unix.IoctlSetPointerInt(int(serial.Fd()), unix.TIOCFLUSH, ttyReadQueue); err != nil {
 		_ = serial.Close()
 		log.Warn("opnsensesvc: TIOCFLUSH failed", slog.String("path", path), slog.Any("err", err))
+
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCFLUSH %s: %w", path, err)
 	}
 

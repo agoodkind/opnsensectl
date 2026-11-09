@@ -27,6 +27,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (RunOutcome, error) {
 	preparedState, err := Prepare(ctx, deps, opts)
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade.Run: prepare", "err", err, "vmid", opts.VMID)
+
 		return RunOutcome{
 			State:        preparedState,
 			Validation:   emptyValidation(),
@@ -91,6 +92,31 @@ func Run(ctx context.Context, deps Deps, opts Options) (RunOutcome, error) {
 	}
 
 	validateState, result, validateErr := Validate(ctx, deps, opts)
+
+	return finishRun(ctx, deps, opts, validateState, result, validateErr)
+}
+
+func emitRunComplete(ctx context.Context, deps Deps, opts Options, level slog.Level, msg string) {
+	emit(
+		ctx,
+		deps.Notifier,
+		level,
+		KindRunComplete,
+		opts.VMID,
+		msg,
+		slog.String("vmid", opts.VMID),
+		slog.String("target", opts.Target),
+	)
+}
+
+func finishRun(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	validateState State,
+	result ValidationResult,
+	validateErr error,
+) (RunOutcome, error) {
 	out := RunOutcome{
 		State:        validateState,
 		Validation:   result,
@@ -172,17 +198,4 @@ func Run(ctx context.Context, deps Deps, opts Options) (RunOutcome, error) {
 
 		return out, err
 	}
-}
-
-func emitRunComplete(ctx context.Context, deps Deps, opts Options, level slog.Level, msg string) {
-	emit(
-		ctx,
-		deps.Notifier,
-		level,
-		KindRunComplete,
-		opts.VMID,
-		msg,
-		slog.String("vmid", opts.VMID),
-		slog.String("target", opts.Target),
-	)
 }

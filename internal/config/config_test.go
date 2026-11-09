@@ -106,7 +106,8 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 	}
 
 	upgrade := cfg.OPNsense.Upgrade
-	if upgrade.EnvGRPCTarget != "unix:///var/run/mwan-opnsense.sock" || upgrade.StateDir != "/var/lib/mwan/upgrades" ||
+	if upgrade.EnvGRPCTarget != "unix:///var/run/mwan-opnsense.sock" ||
+		upgrade.StateDir != "/var/lib/mwan/upgrades" ||
 		upgrade.ExecTimeoutDuration != "60m" ||
 		upgrade.UpgradeTimeoutDuration != "30m" ||
 		upgrade.PostRollbackWaitDuration != "5m" ||

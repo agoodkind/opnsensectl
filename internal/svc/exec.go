@@ -30,6 +30,11 @@ const (
 	maxOutputBytes = 10 * 1024 * 1024 // 10 MB stdout/stderr cap each
 )
 
+var (
+	errExecArgNullByte = errors.New("contains null byte")
+	errExecArgTooLong  = errors.New("too long")
+)
+
 // ExecArgs is the input shape used by the gRPC handler. The proto
 // types live in the gen/ tree and the server wraps this struct around
 // them so the core exec logic is testable without proto deps.
@@ -92,38 +97,7 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 	}
 
 	cmd := exec.CommandContext(cctx, cmdName, cmdArgs...)
-	// Run the child in its own process group and kill the whole group when
-	// the per-call timeout fires. Without this, a grandchild (e.g. the
-	// `sleep` under `sh -c "sleep 5"`) inherits the stdout/stderr pipe and
-	// keeps cmd.Run() blocked until it exits on its own, so the timeout is
-	// detected but not enforced and the grandchild is left orphaned. Killing
-	// the negative PID (the process group) terminates the whole tree at the
-	// deadline. WaitDelay is the I/O safety net for the rare case where a
-	// process still holds the pipe after the group kill.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-			if errors.Is(err, syscall.ESRCH) {
-				return os.ErrProcessDone
-			}
-
-			return logWrappedErrorContext(
-				cctx,
-				args.Log,
-				"opnsensesvc: kill process group failed",
-				"runExec cancel",
-				err,
-				slog.Int("pid", cmd.Process.Pid),
-			)
-		}
-
-		return nil
-	}
-	cmd.WaitDelay = execWaitDelay
+	configureExecProcessGroup(cctx, args.Log, cmd)
 	if len(args.StdinBytes) > 0 {
 		cmd.Stdin = bytes.NewReader(args.StdinBytes)
 	}
@@ -196,13 +170,31 @@ func validateExecArgs(args ExecArgs) error {
 		return errors.New("exec: command too long")
 	}
 
-	for i, a := range args.Args {
-		if strings.ContainsRune(a, 0) {
-			return fmt.Errorf("exec: arg[%d] contains null byte", i)
+	for index, argument := range args.Args {
+		if strings.ContainsRune(argument, 0) {
+			err := fmt.Errorf("exec: arg[%d] %w", index, errExecArgNullByte)
+			loggerOrDefault(args.Log).Error(
+				"opnsensesvc: invalid exec argument",
+				"err",
+				err,
+				"index",
+				index,
+			)
+
+			return err
 		}
 
-		if len(a) > 4096 {
-			return fmt.Errorf("exec: arg[%d] too long", i)
+		if len(argument) > 4096 {
+			err := fmt.Errorf("exec: arg[%d] %w", index, errExecArgTooLong)
+			loggerOrDefault(args.Log).Error(
+				"opnsensesvc: invalid exec argument",
+				"err",
+				err,
+				"index",
+				index,
+			)
+
+			return err
 		}
 	}
 
@@ -251,3 +243,38 @@ func (c *cappedBuffer) Truncated() bool {
 
 // ensure cappedBuffer satisfies [io.Writer]
 var _ io.Writer = (*cappedBuffer)(nil)
+
+func configureExecProcessGroup(cctx context.Context, log *slog.Logger, cmd *exec.Cmd) {
+	// Run the child in its own process group and kill the whole group when
+	// the per-call timeout fires. Without this, a grandchild (e.g. the
+	// `sleep` under `sh -c "sleep 5"`) inherits the stdout/stderr pipe and
+	// keeps cmd.Run() blocked until it exits on its own, so the timeout is
+	// detected but not enforced and the grandchild is left orphaned. Killing
+	// the negative PID (the process group) terminates the whole tree at the
+	// deadline. WaitDelay is the I/O safety net for the rare case where a
+	// process still holds the pipe after the group kill.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			if errors.Is(err, syscall.ESRCH) {
+				return os.ErrProcessDone
+			}
+
+			return logWrappedErrorContext(
+				cctx,
+				log,
+				"opnsensesvc: kill process group failed",
+				"runExec cancel",
+				err,
+				slog.Int("pid", cmd.Process.Pid),
+			)
+		}
+
+		return nil
+	}
+	cmd.WaitDelay = execWaitDelay
+}

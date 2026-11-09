@@ -177,98 +177,7 @@ func backupConfigWithLog(
 
 	destPath := filepath.Join(backupDir, name)
 
-	tmp, err := os.CreateTemp(backupDir, ".backup.tmp.*")
-	if err != nil {
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: create temp backup failed",
-			"backupConfig: tmp",
-			err,
-			slog.String("backup_dir", backupDir),
-		)
-	}
-
-	tmpName := tmp.Name()
-	cleanup := func() {
-		if err := os.Remove(tmpName); err != nil && !errors.Is(err, os.ErrNotExist) {
-			loggerOrDefault(log).WarnContext(
-				ctx,
-				"opnsensesvc: remove temp backup failed",
-				"path",
-				tmpName,
-				"err",
-				err,
-			)
-		}
-	}
-
-	if _, err := io.Copy(tmp, src); err != nil {
-		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
-		cleanup()
-
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: copy config backup failed",
-			"backupConfig: copy",
-			err,
-		)
-	}
-
-	if err := tmp.Sync(); err != nil {
-		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
-		cleanup()
-
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: sync temp backup failed",
-			"backupConfig: sync",
-			err,
-		)
-	}
-
-	if err := tmp.Close(); err != nil {
-		cleanup()
-
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: close temp backup failed",
-			"backupConfig: close",
-			err,
-		)
-	}
-
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		cleanup()
-
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: chmod temp backup failed",
-			"backupConfig: chmod",
-			err,
-			slog.String("path", tmpName),
-		)
-	}
-
-	if err := os.Rename(tmpName, destPath); err != nil {
-		cleanup()
-
-		return "", logWrappedErrorContext(
-			ctx,
-			log,
-			"opnsensesvc: rename temp backup failed",
-			"backupConfig: rename",
-			err,
-			slog.String("from", tmpName),
-			slog.String("to", destPath),
-		)
-	}
-
-	return destPath, nil
+	return copyConfigBackup(ctx, log, src, backupDir, destPath)
 }
 
 func sanitizeLabel(s string) string {
@@ -383,4 +292,105 @@ func injectGatewayV6WithLog(
 	}
 
 	return out, true, nil
+}
+
+func copyConfigBackup(
+	ctx context.Context,
+	log *slog.Logger,
+	src io.Reader,
+	backupDir string,
+	destPath string,
+) (string, error) {
+	tmp, err := os.CreateTemp(backupDir, ".backup.tmp.*")
+	if err != nil {
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: create temp backup failed",
+			"backupConfig: tmp",
+			err,
+			slog.String("backup_dir", backupDir),
+		)
+	}
+
+	tmpName := tmp.Name()
+	cleanup := func() {
+		if err := os.Remove(tmpName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			loggerOrDefault(log).WarnContext(
+				ctx,
+				"opnsensesvc: remove temp backup failed",
+				"path",
+				tmpName,
+				"err",
+				err,
+			)
+		}
+	}
+
+	if _, err := io.Copy(tmp, src); err != nil {
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
+		cleanup()
+
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: copy config backup failed",
+			"backupConfig: copy",
+			err,
+		)
+	}
+
+	if err := tmp.Sync(); err != nil {
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
+		cleanup()
+
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: sync temp backup failed",
+			"backupConfig: sync",
+			err,
+		)
+	}
+
+	if err := tmp.Close(); err != nil {
+		cleanup()
+
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: close temp backup failed",
+			"backupConfig: close",
+			err,
+		)
+	}
+
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		cleanup()
+
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: chmod temp backup failed",
+			"backupConfig: chmod",
+			err,
+			slog.String("path", tmpName),
+		)
+	}
+
+	if err := os.Rename(tmpName, destPath); err != nil {
+		cleanup()
+
+		return "", logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: rename temp backup failed",
+			"backupConfig: rename",
+			err,
+			slog.String("from", tmpName),
+			slog.String("to", destPath),
+		)
+	}
+
+	return destPath, nil
 }

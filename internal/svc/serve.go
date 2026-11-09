@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+var errRecoveredPanic = errors.New("panic")
+
 // Serve opens the virtio-serial device, wraps it in a yamux server
 // session so the single byte stream carries many gRPC connections,
 // registers OpnsenseService and TransferService against a new gRPC
@@ -127,14 +129,14 @@ func serveOneSession(
 	defer stopCancel()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
+			if recovered := recover(); recovered != nil {
 				log.ErrorContext(
 					stopCtx,
 					"opnsensesvc: stop watcher panic",
 					"panic",
-					r,
+					recovered,
 					"err",
-					fmt.Errorf("panic: %v", r),
+					fmt.Errorf("%w: %v", errRecoveredPanic, recovered),
 				)
 			}
 		}()
@@ -148,14 +150,14 @@ func serveOneSession(
 		gracefulDone := make(chan struct{})
 		go func() {
 			defer func() {
-				if r := recover(); r != nil {
+				if recovered := recover(); recovered != nil {
 					log.ErrorContext(
 						stopCtx,
 						"opnsensesvc: graceful-stop panic",
 						"panic",
-						r,
+						recovered,
 						"err",
-						fmt.Errorf("panic: %v", r),
+						fmt.Errorf("%w: %v", errRecoveredPanic, recovered),
 					)
 				}
 			}()

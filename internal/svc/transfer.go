@@ -453,47 +453,11 @@ func (m *TransferManager) serveRead(
 		return fmt.Errorf("transfer: send ack: %w", ackErr)
 	}
 
-	hasher := sha256.New()
-	offset := int64(0)
-	buf := make([]byte, TransferChunkSize)
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return status.Errorf(codes.Canceled, "transfer: ctx: %v", err)
-		}
-
-		n, readErr := file.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if _, hashWriteErr := hasher.Write(chunk); hashWriteErr != nil {
-				return status.Errorf(codes.Internal, "transfer: hash: %v", hashWriteErr)
-			}
-
-			if sendErr := stream.Send(&mwanv1.UploadResponse{
-				Body: &mwanv1.UploadResponse_Data{
-					Data: &mwanv1.TransferDataChunk{
-						Offset: offset,
-						Data:   append([]byte(nil), chunk...),
-					},
-				},
-			}); sendErr != nil {
-				m.log.ErrorContext(ctx, "opnsensesvc: serveRead send data", "err", sendErr)
-				return fmt.Errorf("transfer: send data: %w", sendErr)
-			}
-
-			offset += int64(n)
-		}
-
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-
-		if readErr != nil {
-			return status.Errorf(codes.Internal, "transfer: read: %v", readErr)
-		}
+	offset, finalSum, readErr := m.sendReadChunks(stream, file)
+	if readErr != nil {
+		return readErr
 	}
 
-	finalSum := hex.EncodeToString(hasher.Sum(nil))
 	m.log.InfoContext(
 		ctx,
 		"opnsensesvc: Upload READ audit",
@@ -786,6 +750,7 @@ func (m *TransferManager) resumeWriteState(
 
 	if truncErr := file.Truncate(state.CommittedOffset); truncErr != nil {
 		_ = file.Close()
+
 		return nil, nil, status.Errorf(
 			codes.Internal,
 			"transfer: truncate to committed: %v",
@@ -802,6 +767,7 @@ func (m *TransferManager) resumeWriteState(
 
 		if _, copyErr := io.CopyN(hasher, file, state.CommittedOffset); copyErr != nil {
 			_ = file.Close()
+
 			return nil, nil, status.Errorf(
 				codes.Internal,
 				"transfer: replay temp into hasher: %v",
@@ -845,6 +811,7 @@ func (m *TransferManager) finalizeWrite(
 	got := hex.EncodeToString(w.hasher.Sum(nil))
 	if !strings.EqualFold(got, final.GetSha256Hex()) {
 		w.cleanup()
+
 		return status.Errorf(
 			codes.DataLoss,
 			"transfer: sha256 mismatch: got %s want %s",
@@ -953,13 +920,13 @@ func (m *TransferManager) snapshotThenReplace(
 	}
 
 	base := filepath.Base(target)
-	ts := m.clock.Now().UTC().Format("20060102T150405Z")
+	timestamp := m.clock.Now().UTC().Format("20060102T150405Z")
 	suffix := ""
 	if label != "" {
 		suffix = "-" + label
 	}
 
-	backupPath := filepath.Join(backupDir, fmt.Sprintf("%s.%s%s.bak", base, ts, suffix))
+	backupPath := filepath.Join(backupDir, fmt.Sprintf("%s.%s%s.bak", base, timestamp, suffix))
 	if _, err := os.Stat(target); err == nil {
 		content, readErr := os.ReadFile(target)
 		if readErr != nil {
@@ -994,4 +961,54 @@ func (m *TransferManager) snapshotThenReplace(
 	}
 
 	return backupPath, nil
+}
+
+func (m *TransferManager) sendReadChunks(
+	stream mwanv1.TransferService_UploadServer,
+	file *os.File,
+) (int64, string, error) {
+	ctx := stream.Context()
+	hasher := sha256.New()
+	offset := int64(0)
+	buf := make([]byte, TransferChunkSize)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, "", status.Errorf(codes.Canceled, "transfer: ctx: %v", err)
+		}
+
+		n, readErr := file.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if _, hashWriteErr := hasher.Write(chunk); hashWriteErr != nil {
+				return 0, "", status.Errorf(codes.Internal, "transfer: hash: %v", hashWriteErr)
+			}
+
+			if sendErr := stream.Send(&mwanv1.UploadResponse{
+				Body: &mwanv1.UploadResponse_Data{
+					Data: &mwanv1.TransferDataChunk{
+						Offset: offset,
+						Data:   append([]byte(nil), chunk...),
+					},
+				},
+			}); sendErr != nil {
+				m.log.ErrorContext(ctx, "opnsensesvc: serveRead send data", "err", sendErr)
+				return 0, "", fmt.Errorf("transfer: send data: %w", sendErr)
+			}
+
+			offset += int64(n)
+		}
+
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+
+		if readErr != nil {
+			return 0, "", status.Errorf(codes.Internal, "transfer: read: %v", readErr)
+		}
+	}
+
+	finalSum := hex.EncodeToString(hasher.Sum(nil))
+
+	return offset, finalSum, nil
 }

@@ -158,24 +158,7 @@ func (g *GRPCExecutor) GuestExec(
 		return GuestExecResult{}, err
 	}
 
-	stderrText := string(resp.Stderr)
-	if resp.TimedOut {
-		stderrText = appendDiag(stderrText, "[grpc-executor: command timed out]")
-	}
-
-	if resp.StdoutTruncated {
-		stderrText = appendDiag(stderrText, "[grpc-executor: stdout truncated at 10 MB]")
-	}
-
-	if resp.StderrTruncated {
-		stderrText = appendDiag(stderrText, "[grpc-executor: stderr truncated at 10 MB]")
-	}
-
-	return GuestExecResult{
-		ExitCode: int(resp.ExitCode),
-		Stdout:   string(resp.Stdout),
-		Stderr:   stderrText,
-	}, nil
+	return grpcExecResult(resp), nil
 }
 
 // isClientClosedErr reports whether err indicates the underlying gRPC
@@ -203,4 +186,25 @@ func appendDiag(stderr, diag string) string {
 	}
 
 	return stderr + "\n" + diag
+}
+
+func grpcExecResult(resp *ExecResult) GuestExecResult {
+	stderrText := string(resp.Stderr)
+	if resp.TimedOut {
+		stderrText = appendDiag(stderrText, "[grpc-executor: command timed out]")
+	}
+
+	if resp.StdoutTruncated {
+		stderrText = appendDiag(stderrText, "[grpc-executor: stdout truncated at 10 MB]")
+	}
+
+	if resp.StderrTruncated {
+		stderrText = appendDiag(stderrText, "[grpc-executor: stderr truncated at 10 MB]")
+	}
+
+	return GuestExecResult{
+		ExitCode: int(resp.ExitCode),
+		Stdout:   string(resp.Stdout),
+		Stderr:   stderrText,
+	}
 }

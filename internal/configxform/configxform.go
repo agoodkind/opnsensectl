@@ -141,13 +141,13 @@ func applyElementRemoves(doc *etree.Document, removes []ElementRemove) error {
 		}
 
 		matches := doc.FindElements(remove.XPath)
-		for _, el := range matches {
-			parent := el.Parent()
+		for _, element := range matches {
+			parent := element.Parent()
 			if parent == nil {
 				continue
 			}
 
-			parent.RemoveChild(el)
+			parent.RemoveChild(element)
 		}
 	}
 

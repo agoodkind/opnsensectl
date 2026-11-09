@@ -92,51 +92,14 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 			"path",
 			deployDir,
 		)
+
 		return emptyState(), fmt.Errorf("upgrade.Prepare: mkdir deploy dir: %w", err)
 	}
 
 	snap := SnapshotName(now)
 
-	if err := capturePreUpgradeArtefacts(ctx, deps, opts, deployDir); err != nil {
-		emit(
-			ctx,
-			deps.Notifier,
-			slog.LevelError,
-			KindPrepare,
-			opts.VMID,
-			"opnsense-upgrade prepare: pre-upgrade artefact capture failed",
-			slog.String("vmid", opts.VMID),
-			slog.String("deploy_id", deployID),
-			slog.String("err", err.Error()),
-		)
-		slog.ErrorContext(
-			ctx,
-			"upgrade.Prepare: capture artefacts failed",
-			"err",
-			err,
-			"vmid",
-			opts.VMID,
-			"deploy_id",
-			deployID,
-		)
-
+	if err := capturePreparedArtifacts(ctx, deps, opts, deployDir, deployID, clk); err != nil {
 		return emptyState(), err
-	}
-
-	if opts.UseBootEnvironment && deps.Exec != nil {
-		bectlOK := captureBootEnvironment(ctx, deps, opts, deployDir, clk)
-		if logger := deps.Log; logger != nil {
-			logger.InfoContext(
-				ctx,
-				"upgrade.Prepare: boot environment capture",
-				"vmid",
-				opts.VMID,
-				"deploy_id",
-				deployID,
-				"ok",
-				bectlOK,
-			)
-		}
 	}
 
 	// metadata.json is written after the snapshot lands so that a retry
@@ -351,4 +314,57 @@ func emptyState() State {
 		UpdatedAt:    time.Time{},
 		FailingCheck: nil,
 	}
+}
+
+func capturePreparedArtifacts(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	deployDir string,
+	deployID string,
+	clk Clock,
+) error {
+	if err := capturePreUpgradeArtefacts(ctx, deps, opts, deployDir); err != nil {
+		emit(
+			ctx,
+			deps.Notifier,
+			slog.LevelError,
+			KindPrepare,
+			opts.VMID,
+			"opnsense-upgrade prepare: pre-upgrade artefact capture failed",
+			slog.String("vmid", opts.VMID),
+			slog.String("deploy_id", deployID),
+			slog.String("err", err.Error()),
+		)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture artefacts failed",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+			"deploy_id",
+			deployID,
+		)
+
+		return err
+	}
+
+	if opts.UseBootEnvironment && deps.Exec != nil {
+		bectlOK := captureBootEnvironment(ctx, deps, opts, deployDir, clk)
+		if logger := deps.Log; logger != nil {
+			logger.InfoContext(
+				ctx,
+				"upgrade.Prepare: boot environment capture",
+				"vmid",
+				opts.VMID,
+				"deploy_id",
+				deployID,
+				"ok",
+				bectlOK,
+			)
+		}
+	}
+
+	return nil
 }
