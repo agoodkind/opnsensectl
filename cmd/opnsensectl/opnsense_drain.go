@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"goodkind.io/opnsensectl/internal/cli"
+
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/coreos/go-systemd/v22/daemon"
 )
@@ -66,6 +68,7 @@ func (h *drainHub) setClient(c net.Conn) {
 	h.mu.Lock()
 	old := h.client
 	h.client = c
+
 	h.epoch++
 	for h.toClient != nil {
 		select {
@@ -73,8 +76,10 @@ func (h *drainHub) setClient(c net.Conn) {
 			continue
 		default:
 		}
+
 		break
 	}
+
 	h.mu.Unlock()
 	if old != nil {
 		_ = old.Close()
@@ -84,6 +89,7 @@ func (h *drainHub) setClient(c net.Conn) {
 func (h *drainHub) getClient() net.Conn {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
 	return h.client
 }
 
@@ -92,6 +98,7 @@ func (h *drainHub) clearClient(c net.Conn) {
 	if h.client == c {
 		h.client = nil
 	}
+
 	h.mu.Unlock()
 }
 
@@ -104,6 +111,7 @@ func (h *drainHub) setChardev(c net.Conn) {
 func (h *drainHub) getChardev() net.Conn {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
 	return h.chardev
 }
 
@@ -124,7 +132,10 @@ var hostDrainCommand = serviceCommand{
 	},
 	configDoc: "TOML file whose [opnsense.drain] sets chardev and listen",
 	environment: []serviceEnv{
-		{name: notifySocketEnv, purpose: "systemd notify socket for readiness and the chardev fd store (a Type=notify unit sets it)"},
+		{
+			name:    notifySocketEnv,
+			purpose: "systemd notify socket for readiness and the chardev fd store (a Type=notify unit sets it)",
+		},
 	},
 }
 
@@ -144,17 +155,23 @@ func runOPNsenseHostDrain(args []string) int {
 	if err != nil {
 		return printAndExit("host drain", err)
 	}
+
 	chardevTarget, err := requireDrainChardev(cfg)
 	if err != nil {
 		return printAndExit("host drain", err)
 	}
+
 	listenPath, err := requireDrainListen(cfg)
 	if err != nil {
 		return printAndExit("host drain", err)
 	}
+
 	chardevPath, ok := unixPath(chardevTarget)
 	if !ok {
-		return printAndExit("host drain", fmt.Errorf("[opnsense.drain].chardev must be unix:///abs/path"))
+		return printAndExit(
+			"host drain",
+			fmt.Errorf("[opnsense.drain].chardev must be unix:///abs/path"),
+		)
 	}
 
 	log := slog.Default()
@@ -171,6 +188,7 @@ func runOPNsenseHostDrain(args []string) int {
 	if err != nil {
 		return printAndExit("host drain", fmt.Errorf("acquire listener: %w", err))
 	}
+
 	// Closing ln on return (after runDrainRelay sees ctx cancelled) unblocks
 	// acceptLoop's Accept, so no separate ctx-watcher goroutine is needed.
 	defer func() { _ = ln.Close() }()
@@ -184,6 +202,7 @@ func runOPNsenseHostDrain(args []string) int {
 
 	log.InfoContext(ctx, "opnsense drain: serving", "chardev", chardevPath, "listen", listenPath)
 	runDrainRelay(ctx, log, ln, openChardev)
+
 	return 0
 }
 
@@ -206,31 +225,47 @@ func makeChardevOpener(
 	log *slog.Logger,
 	byName map[string][]*os.File,
 	chardevPath string,
-	acquire func(context.Context, *slog.Logger, map[string][]*os.File, string) (net.Conn, bool, error),
+	acquire func(context.Context, *slog.Logger, map[string][]*os.File, string) (
+		net.Conn,
+		bool,
+		error,
+	),
 ) func(context.Context) (net.Conn, error) {
 	first := true
 	reclaimExpected := false
+
 	return func(ctx context.Context) (net.Conn, error) {
 		var reclaimable map[string][]*os.File
 		if first {
 			reclaimable = byName
 		}
+
 		conn, adopted, err := acquire(ctx, log, reclaimable, chardevPath)
 		first = false
 		if err != nil {
 			return nil, err
 		}
+
 		if !adopted {
 			if reclaimExpected {
-				log.ErrorContext(ctx, "opnsense drain: fresh chardev dial while a stored fd was expected; this is the only wedge window",
-					"err", errors.New("no stored fd reclaimed; drainer restarted without fd-store handoff"))
+				log.ErrorContext(
+					ctx,
+					"opnsense drain: fresh chardev dial while a stored fd was expected; this is the only wedge window",
+					"err",
+					errors.New(
+						"no stored fd reclaimed; drainer restarted without fd-store handoff",
+					),
+				)
 			}
+
 			// A failed fdstore upload is non-fatal: the drainer still serves,
 			// it just loses the zero-window hand-off on its next restart.
 			// storeChardevFD logs the failure.
 			_ = storeChardevFD(ctx, log, conn)
 		}
+
 		reclaimExpected = true
+
 		return conn, nil
 	}
 }
@@ -240,21 +275,30 @@ func makeChardevOpener(
 // chardev when a session ends. It returns when ctx is cancelled. The chardev
 // transport detail lives in openChardev, so this loop is the same under systemd
 // and in tests.
-func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openChardev func(context.Context) (net.Conn, error)) {
+func runDrainRelay(
+	ctx context.Context,
+	log *slog.Logger,
+	ln net.Listener,
+	openChardev func(context.Context) (net.Conn, error),
+) {
 	hub := &drainHub{}
 	spawn(ctx, log, "drain accept", func() { acceptLoop(ctx, log, hub, ln) })
+
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+
 		chardev, err := openChardev(ctx)
 		if err != nil {
 			log.WarnContext(ctx, "opnsense drain: chardev unavailable; retrying", "err", err)
 			if !sleepCtxOK(ctx, drainReconnectBackoff) {
 				return
 			}
+
 			continue
 		}
+
 		hub.setChardev(chardev)
 		serveErr := drainChardev(ctx, log, hub, chardev)
 		hub.setChardev(nil)
@@ -262,6 +306,7 @@ func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openC
 		if ctx.Err() != nil {
 			return
 		}
+
 		log.WarnContext(ctx, "opnsense drain: chardev session ended; re-opening", "err", serveErr)
 		if !sleepCtxOK(ctx, drainReconnectBackoff) {
 			return
@@ -275,7 +320,12 @@ func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openC
 // no socket unit and removes a leftover one, so the installed drain service
 // binds after its next restart. A reclaimed unix
 // listener must not unlink its path on Close, since systemd owns it.
-func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]*os.File, listenPath string) (net.Listener, error) {
+func acquireListener(
+	ctx context.Context,
+	log *slog.Logger,
+	byName map[string][]*os.File,
+	listenPath string,
+) (net.Listener, error) {
 	if fs := byName["relay"]; len(fs) > 0 {
 		ln, err := net.FileListener(fs[0])
 		_ = fs[0].Close()
@@ -283,28 +333,52 @@ func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]
 			log.ErrorContext(ctx, "opnsense drain: socket-activated listener unusable", "err", err)
 			return nil, fmt.Errorf("file listener: %w", err)
 		}
+
 		if ul, ok := ln.(*net.UnixListener); ok {
 			ul.SetUnlinkOnClose(false)
 		}
+
 		log.InfoContext(ctx, "opnsense drain: adopted socket-activated relay listener")
+
 		return ln, nil
 	}
+
 	if err := removeStaleSocket(listenPath); err != nil {
-		log.ErrorContext(ctx, "opnsense drain: clear stale relay socket", "path", listenPath, "err", err)
+		log.ErrorContext(
+			ctx,
+			"opnsense drain: clear stale relay socket",
+			"path",
+			listenPath,
+			"err",
+			err,
+		)
+
 		return nil, fmt.Errorf("clear stale relay socket: %w", err)
 	}
+
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "unix", listenPath)
 	if err != nil {
 		log.ErrorContext(ctx, "opnsense drain: bind relay listener", "path", listenPath, "err", err)
 		return nil, fmt.Errorf("listen %s: %w", listenPath, err)
 	}
+
 	if err := restrictSocket(listenPath); err != nil {
 		_ = ln.Close()
-		log.ErrorContext(ctx, "opnsense drain: chmod relay listener", "path", listenPath, "err", err)
+		log.ErrorContext(
+			ctx,
+			"opnsense drain: chmod relay listener",
+			"path",
+			listenPath,
+			"err",
+			err,
+		)
+
 		return nil, fmt.Errorf("restrict relay listener: %w", err)
 	}
+
 	log.InfoContext(ctx, "opnsense drain: bound relay listener", "path", listenPath)
+
 	return ln, nil
 }
 
@@ -312,7 +386,12 @@ func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]
 // (name "chardev") when present, else dials the chardev fresh. The bool reports
 // whether the connection was adopted, so the caller stores a freshly dialed one
 // but does not re-store an adopted one.
-func acquireChardev(ctx context.Context, log *slog.Logger, byName map[string][]*os.File, path string) (net.Conn, bool, error) {
+func acquireChardev(
+	ctx context.Context,
+	log *slog.Logger,
+	byName map[string][]*os.File,
+	path string,
+) (net.Conn, bool, error) {
 	if fs := byName["chardev"]; len(fs) > 0 {
 		c, err := net.FileConn(fs[0])
 		_ = fs[0].Close()
@@ -320,14 +399,23 @@ func acquireChardev(ctx context.Context, log *slog.Logger, byName map[string][]*
 			log.InfoContext(ctx, "opnsense drain: adopted reclaimed chardev fd")
 			return c, true, nil
 		}
-		log.WarnContext(ctx, "opnsense drain: reclaimed chardev fd unusable; dialing fresh", "err", err)
+
+		log.WarnContext(
+			ctx,
+			"opnsense drain: reclaimed chardev fd unusable; dialing fresh",
+			"err",
+			err,
+		)
 	}
+
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
 		return nil, false, fmt.Errorf("dial chardev %s: %w", path, err)
 	}
+
 	log.InfoContext(ctx, "opnsense drain: dialed chardev")
+
 	return c, false, nil
 }
 
@@ -342,13 +430,16 @@ func storeChardevFD(ctx context.Context, log *slog.Logger, c net.Conn) error {
 	if !ok {
 		err := fmt.Errorf("chardev conn is %T, not *net.UnixConn", c)
 		log.ErrorContext(ctx, "opnsense drain: fdstore upload", "err", err)
+
 		return err
 	}
+
 	rc, err := uc.SyscallConn()
 	if err != nil {
 		log.ErrorContext(ctx, "opnsense drain: fdstore upload", "err", err)
 		return fmt.Errorf("chardev syscall conn: %w", err)
 	}
+
 	var sendErr error
 	ctlErr := rc.Control(func(fd uintptr) {
 		sendErr = notifyWithFD(ctx, log, "FDSTORE=1\nFDNAME=chardev", int(fd))
@@ -357,9 +448,11 @@ func storeChardevFD(ctx context.Context, log *slog.Logger, c net.Conn) error {
 		log.ErrorContext(ctx, "opnsense drain: fdstore upload", "err", ctlErr)
 		return fmt.Errorf("chardev rawconn control: %w", ctlErr)
 	}
+
 	if sendErr == nil {
 		log.InfoContext(ctx, "opnsense drain: stored chardev fd in systemd fdstore")
 	}
+
 	return sendErr
 }
 
@@ -372,10 +465,12 @@ func notifyWithFD(ctx context.Context, log *slog.Logger, state string, fd int) e
 	if sock == "" {
 		return nil
 	}
+
 	name := sock
 	if strings.HasPrefix(name, "@") {
 		name = "\x00" + name[1:] // abstract namespace socket
 	}
+
 	// Send from an unbound datagram socket with sendmsg addressed to the notify
 	// socket, carrying the fd as SCM_RIGHTS ancillary data. Go's net package
 	// cannot autobind a unixgram socket, so this uses raw syscalls. This is the
@@ -385,6 +480,7 @@ func notifyWithFD(ctx context.Context, log *slog.Logger, state string, fd int) e
 		log.ErrorContext(ctx, "opnsense drain: notify socket", "err", err)
 		return fmt.Errorf("notify socket: %w", err)
 	}
+
 	defer func() { _ = syscall.Close(s) }()
 	syscall.CloseOnExec(s)
 	dst := &syscall.SockaddrUnix{Name: name}
@@ -392,6 +488,7 @@ func notifyWithFD(ctx context.Context, log *slog.Logger, state string, fd int) e
 		log.ErrorContext(ctx, "opnsense drain: notify sendmsg", "err", err)
 		return fmt.Errorf("notify sendmsg: %w", err)
 	}
+
 	return nil
 }
 
@@ -407,10 +504,17 @@ func acceptLoop(ctx context.Context, log *slog.Logger, hub *drainHub, ln net.Lis
 			// Accept failure with the context still live is unexpected and
 			// worth a log signal (the relay stops accepting after it).
 			if ctx.Err() == nil {
-				log.WarnContext(ctx, "opnsense drain: relay accept failed; stopping accept loop", "err", err)
+				log.WarnContext(
+					ctx,
+					"opnsense drain: relay accept failed; stopping accept loop",
+					"err",
+					err,
+				)
 			}
+
 			return
 		}
+
 		hub.setClient(c)
 		spawn(ctx, log, "drain client", func() { clientPump(hub, c) })
 	}
@@ -426,6 +530,7 @@ func clientPump(hub *drainHub, c net.Conn) {
 		_ = c.Close()
 	}()
 	buf := make([]byte, drainBufSize)
+
 	for {
 		n, err := c.Read(buf)
 		if n > 0 {
@@ -438,6 +543,7 @@ func clientPump(hub *drainHub, c net.Conn) {
 				}
 			}
 		}
+
 		if err != nil || hub.getClient() != c {
 			return
 		}
@@ -481,8 +587,16 @@ func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev 
 // bytes corrupts the framed yamux stream (rejected design from commit 2f5f419).
 // Each chunk is stamped with the current hub epoch so the writer can drop
 // chunks that belong to a prior session.
-func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn, q chan drainChunk, readErr chan error) {
+func chardevReadLoop(
+	ctx context.Context,
+	log *slog.Logger,
+	hub *drainHub,
+	chardev net.Conn,
+	q chan drainChunk,
+	readErr chan error,
+) {
 	buf := make([]byte, drainBufSize)
+
 	for {
 		n, err := chardev.Read(buf)
 		if n > 0 {
@@ -502,12 +616,14 @@ func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chard
 				}
 			}
 		}
+
 		if err != nil {
 			log.WarnContext(ctx, "opnsense drain: chardev read ended", "err", err)
 			select {
 			case readErr <- fmt.Errorf("chardev read: %w", err):
 			default:
 			}
+
 			return
 		}
 	}
@@ -531,6 +647,7 @@ func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan drainChunk) {
 			if chunk.epoch != cur {
 				continue // stale chunk from a prior session: drop it
 			}
+
 			if c != nil {
 				if _, werr := c.Write(chunk.data); werr != nil {
 					hub.clearClient(c)
@@ -544,13 +661,5 @@ func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan drainChunk) {
 // spawn runs fn in a goroutine with a recover that logs any panic, so one
 // broken relay connection never crashes the drainer.
 func spawn(ctx context.Context, log *slog.Logger, where string, fn func()) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.ErrorContext(ctx, "opnsense drain: goroutine panic",
-					"where", where, "panic", r, "err", fmt.Errorf("panic: %v", r))
-			}
-		}()
-		fn()
-	}()
+	cli.Spawn(ctx, log, where, fn)
 }

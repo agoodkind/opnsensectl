@@ -44,13 +44,17 @@ func emit(
 	if n == nil {
 		return
 	}
-	n.Notify(ctx, notify.Event{
-		Level:   level,
-		Kind:    kind,
-		Key:     vmid,
-		Message: msg,
-		Fields:  fields,
-	})
+
+	n.Notify(
+		ctx,
+		notify.Event{
+			Level:   level,
+			Kind:    kind,
+			Key:     vmid,
+			Message: msg,
+			Fields:  fields,
+		},
+	)
 }
 
 // resolve clears an active alert. Used at commit time so a previously
@@ -60,5 +64,6 @@ func resolve(ctx context.Context, n notify.Notifier, kind, vmid, msg string) {
 	if n == nil {
 		return
 	}
+
 	n.Resolve(ctx, kind, vmid, msg)
 }

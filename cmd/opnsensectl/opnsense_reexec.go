@@ -32,21 +32,30 @@ import (
 // execFn is [syscall.Exec] in production and a fake in tests.
 // [syscall.Exec] returns only on failure, so a non-nil return means the
 // exec did not happen and the caller should fall back to a clean exit.
-func reExecCurrent(log *slog.Logger, binaryDir string, execFn func(argv0 string, argv []string, envv []string) error) error {
+func reExecCurrent(
+	log *slog.Logger,
+	binaryDir string,
+	execFn func(argv0 string, argv []string, envv []string) error,
+) error {
 	if log == nil {
 		log = slog.Default()
 	}
+
 	target := filepath.Join(binaryDir, svc.BinaryCurrent)
 	if _, err := os.Stat(target); err != nil {
 		log.Error("re-exec: stat active binary failed", "target", target, "err", err)
 		return fmt.Errorf("re-exec: stat active binary %s: %w", target, err)
 	}
+
 	if len(os.Args) < 2 {
 		err := fmt.Errorf("re-exec: the running argv %q carries no command to reuse", os.Args)
 		log.Error("re-exec: refusing to re-exec without the running command", "err", err)
+
 		return err
 	}
+
 	argv := append([]string(nil), os.Args...)
 	log.Info("mwan-opnsense: re-exec onto active binary", "target", target, "argv", argv)
+
 	return execFn(target, argv, os.Environ())
 }

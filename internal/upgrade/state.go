@@ -52,6 +52,7 @@ func readStateFile(path string) ([]byte, error) {
 		slog.Error("upgrade: ReadFile state", "err", err, "path", clean)
 		return nil, fmt.Errorf("upgrade: read %q: %w", clean, err)
 	}
+
 	return data, nil
 }
 
@@ -62,22 +63,31 @@ func loadStateCtx(ctx context.Context, stateDir, vmid string) (State, error) {
 	path := statePathFor(stateDir, vmid)
 	data, err := readStateFile(path)
 	zero := State{
-		VMID: "", DeployID: "", Target: "", Snapshot: "",
-		Phase: PhaseEmpty, UpdatedAt: time.Time{}, FailingCheck: nil,
+		VMID:         "",
+		DeployID:     "",
+		Target:       "",
+		Snapshot:     "",
+		Phase:        PhaseEmpty,
+		UpdatedAt:    time.Time{},
+		FailingCheck: nil,
 	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return zero, nil
 		}
+
 		slog.ErrorContext(ctx, "upgrade: read state", "err", err, "path", path)
+
 		return zero, fmt.Errorf("upgrade: read state %q: %w", path, err)
 	}
-	var st State
-	if err := json.Unmarshal(data, &st); err != nil {
+
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
 		slog.ErrorContext(ctx, "upgrade: parse state", "err", err, "path", path)
 		return zero, fmt.Errorf("upgrade: parse state %q: %w", path, err)
 	}
-	return st, nil
+
+	return state, nil
 }
 
 // saveStateCtx writes the state file atomically. The parent directory
@@ -88,43 +98,55 @@ func saveStateCtx(ctx context.Context, stateDir string, st State, now time.Time)
 	if st.VMID == "" {
 		err := errors.New("upgrade: SaveState requires VMID")
 		slog.ErrorContext(ctx, "upgrade: SaveState missing VMID", "err", err)
+
 		return err
 	}
+
 	st.UpdatedAt = now
 	dir := filepath.Join(stateDir, st.VMID)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		slog.ErrorContext(ctx, "upgrade: SaveState mkdir", "err", err, "path", dir)
 		return fmt.Errorf("upgrade: mkdir %q: %w", dir, err)
 	}
+
 	path := statePathFor(stateDir, st.VMID)
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade: SaveState marshal", "err", err)
 		return fmt.Errorf("upgrade: marshal state: %w", err)
 	}
+
 	tmp, err := os.CreateTemp(dir, ".state.json.tmp.*")
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade: SaveState create temp", "err", err, "dir", dir)
 		return fmt.Errorf("upgrade: create temp state: %w", err)
 	}
+
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
 		slog.ErrorContext(ctx, "upgrade: SaveState write temp", "err", err, "path", tmpName)
+
 		return fmt.Errorf("upgrade: write temp state: %w", err)
 	}
+
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
 		slog.ErrorContext(ctx, "upgrade: SaveState close temp", "err", err, "path", tmpName)
+
 		return fmt.Errorf("upgrade: close temp state: %w", err)
 	}
+
 	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		slog.ErrorContext(ctx, "upgrade: SaveState rename", "err", err, "path", path)
+
 		return fmt.Errorf("upgrade: rename state %q: %w", path, err)
 	}
+
 	slog.InfoContext(ctx, "upgrade: state saved", "vmid", st.VMID, "phase", st.Phase, "path", path)
+
 	return nil
 }
 
@@ -189,13 +211,15 @@ var allowedTransitions = map[Phase]map[Phase]struct{}{
 // `from` to `to`. The state machine is deliberately strict: any
 // transition not enumerated in allowedTransitions is rejected, so a
 // careless re-run cannot land the system in an inconsistent state.
-func CanTransition(from, to Phase) bool {
-	allowed, ok := allowedTransitions[from]
-	if !ok {
+func CanTransition(from, target Phase) bool {
+	allowed, exists := allowedTransitions[from]
+	if !exists {
 		return false
 	}
-	_, ok = allowed[to]
-	return ok
+
+	_, exists = allowed[target]
+
+	return exists
 }
 
 // TransitionNotAllowedError is returned by [EnforceTransition] when
@@ -222,6 +246,7 @@ func EnforceTransition(from, to Phase) error {
 	if !CanTransition(from, to) {
 		return TransitionNotAllowedError{From: from, To: to}
 	}
+
 	return nil
 }
 
@@ -240,14 +265,17 @@ func IsUpgradeSnapshot(name string) bool {
 	if !strings.HasPrefix(name, SnapshotPrefix) {
 		return false
 	}
+
 	tail := strings.TrimPrefix(name, SnapshotPrefix)
 	if tail == "" {
 		return false
 	}
+
 	for _, r := range tail {
 		if r < '0' || r > '9' {
 			return false
 		}
 	}
+
 	return true
 }

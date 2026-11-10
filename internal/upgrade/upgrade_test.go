@@ -35,7 +35,10 @@ type fakeNotifier struct {
 func (f *fakeNotifier) Notify(_ context.Context, ev notify.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.events = append(f.events, recordedNotify{Kind: ev.Kind, Key: ev.Key, Level: ev.Level, Msg: ev.Message})
+	f.events = append(
+		f.events,
+		recordedNotify{Kind: ev.Kind, Key: ev.Key, Level: ev.Level, Msg: ev.Message},
+	)
 }
 
 func (f *fakeNotifier) Resolve(_ context.Context, kind, key, msg string) {
@@ -49,6 +52,7 @@ func (f *fakeNotifier) snapshot() []recordedNotify {
 	defer f.mu.Unlock()
 	out := make([]recordedNotify, len(f.events))
 	copy(out, f.events)
+
 	return out
 }
 
@@ -57,6 +61,7 @@ func (f *fakeNotifier) kinds() []string {
 	for _, e := range f.snapshot() {
 		out = append(out, e.Kind)
 	}
+
 	return out
 }
 
@@ -87,6 +92,7 @@ func (s *fakeSnap) VMSnapshot(_ context.Context, vmid, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snapshots = append(s.snapshots, snapshotCall{VMID: vmid, Snap: name})
+
 	return s.snapErr
 }
 
@@ -94,12 +100,14 @@ func (s *fakeSnap) VMRollback(_ context.Context, vmid, snap string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rollbacks = append(s.rollbacks, snapshotCall{VMID: vmid, Snap: snap})
+
 	return s.rollbackErr
 }
 
 func (s *fakeSnap) VMSnapshots(_ context.Context, _ string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	return s.listing, nil
 }
 
@@ -107,6 +115,7 @@ func (s *fakeSnap) VMDelSnapshot(_ context.Context, vmid, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deletes = append(s.deletes, snapshotCall{VMID: vmid, Snap: name})
+
 	return s.delErr
 }
 
@@ -114,6 +123,7 @@ func (s *fakeSnap) VMStart(_ context.Context, vmid string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.starts = append(s.starts, vmid)
+
 	return s.startErr
 }
 
@@ -121,6 +131,7 @@ func (s *fakeSnap) VMStatus(_ context.Context, vmid string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.statusCalls = append(s.statusCalls, vmid)
+
 	return s.running, s.statusErr
 }
 
@@ -148,29 +159,38 @@ type fakeExec struct {
 	firmware *fakeFirmware
 }
 
-func (e *fakeExec) GuestExec(_ context.Context, vmid string, args ...string) (GuestExecResult, error) {
+func (e *fakeExec) GuestExec(
+	_ context.Context,
+	vmid string,
+	args ...string,
+) (GuestExecResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.calls = append(e.calls, execCall{VMID: vmid, Args: append([]string(nil), args...)})
 	if len(args) == 0 {
 		return GuestExecResult{}, errors.New("fakeExec: empty argv")
 	}
+
 	if res, ok := e.byArgv[strings.Join(args, " ")]; ok {
 		return res, nil
 	}
+
 	if res, ok := e.byCommand[args[0]]; ok {
 		return res, e.errByCommand[args[0]]
 	}
+
 	return e.firmware.exec(args)
 }
 
 func (e *fakeExec) argvs() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
 	out := make([]string, 0, len(e.calls))
 	for _, c := range e.calls {
 		out = append(out, strings.Join(c.Args, " "))
 	}
+
 	return out
 }
 
@@ -244,8 +264,12 @@ const (
 )
 
 func bootTimeOutput(seconds int64) string {
-	return fmt.Sprintf("{ sec = %d, usec = %d } %s\n", seconds, testbedBootMicroseconds,
-		time.Unix(seconds, 0).UTC().Format("Mon Jan _2 15:04:05 2006"))
+	return fmt.Sprintf(
+		"{ sec = %d, usec = %d } %s\n",
+		seconds,
+		testbedBootMicroseconds,
+		time.Unix(seconds, 0).UTC().Format("Mon Jan _2 15:04:05 2006"),
+	)
 }
 
 // productionHotfix is the production router on 2026-09-14: core package
@@ -283,11 +307,14 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 			f.oldBootLeft--
 		case f.unreachableLeft > 0:
 			f.unreachableLeft--
-			return GuestExecResult{}, errors.New("grpc Exec " + args[0] + ": rpc error: code = Unavailable desc = connection refused")
+			return GuestExecResult{}, errors.New(
+				"grpc Exec " + args[0] + ": rpc error: code = Unavailable desc = connection refused",
+			)
 		default:
 			f.boot()
 		}
 	}
+
 	switch command {
 	case guestTrue:
 		return fwOK("")
@@ -308,11 +335,18 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 	case guestPkg + " rquery %v opnsense-update":
 		return fwOK(f.updaterAvailable + "\n")
 	case guestPkg + " query %n-%v":
-		return fwOK(fmt.Sprintf("opnsense-%s\nopnsense-update-%s\nos-frr-1.45\n", f.coreVersion, f.updaterVersion))
+		return fwOK(
+			fmt.Sprintf(
+				"opnsense-%s\nopnsense-update-%s\nos-frr-1.45\n",
+				f.coreVersion,
+				f.updaterVersion,
+			),
+		)
 	case guestPluginctl + " -g system.firmware.reboot":
 		if f.alwaysReboot {
 			return fwOK("1\n")
 		}
+
 		return fwOK("\n")
 	case guestUpdater + " -v":
 		return fwOK(stripPackageRevision(f.updaterVersion) + "\n")
@@ -332,12 +366,15 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 	case guestShutdown + " -r +0":
 		return f.reboot()
 	}
+
 	if len(args) == 5 && args[0] == guestPkg && args[1] == "version" && args[2] == "-t" {
 		return fwOK(pkgVersionOrder(args[3], args[4]) + "\n")
 	}
+
 	if len(args) == 4 && args[0] == guestUpdater && args[1] == "-u" && args[2] == "-r" {
 		return f.stageRelease(args[3])
 	}
+
 	return GuestExecResult{ExitCode: 127, Stdout: "", Stderr: args[0] + ": not found\n"},
 		fmt.Errorf("fakeFirmware: unexpected command %q", command)
 }
@@ -350,6 +387,7 @@ func (f *fakeFirmware) checkSets() (GuestExecResult, error) {
 	if release != f.baseVersion || release != f.kernelVersion {
 		return fwOK("")
 	}
+
 	return GuestExecResult{ExitCode: 1, Stdout: "", Stderr: ""}, nil
 }
 
@@ -363,16 +401,22 @@ func (f *fakeFirmware) installSets() (GuestExecResult, error) {
 	f.oldKernel = f.kernelVersion
 	f.baseVersion = release
 	f.kernelVersion = release
-	return fwOK(fmt.Sprintf("Fetching base-%[1]s-amd64.txz: ..... done\n"+
-		"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
-		"!!!!!!!!!!!! ATTENTION !!!!!!!!!!!!!!!\n"+
-		"! A critical upgrade is in progress. !\n"+
-		"! Please do not turn off the system. !\n"+
-		"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"+
-		"Installing kernel-%[1]s-amd64.txz... done\n"+
-		"Installing base-%[1]s-amd64.txz... done\n"+
-		"Cleaning obsolete files... done\n"+
-		"Please reboot.\n", release))
+
+	return fwOK(
+		fmt.Sprintf(
+			"Fetching base-%[1]s-amd64.txz: ..... done\n"+
+				"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
+				"!!!!!!!!!!!! ATTENTION !!!!!!!!!!!!!!!\n"+
+				"! A critical upgrade is in progress. !\n"+
+				"! Please do not turn off the system. !\n"+
+				"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"+
+				"Installing kernel-%[1]s-amd64.txz... done\n"+
+				"Installing base-%[1]s-amd64.txz... done\n"+
+				"Cleaning obsolete files... done\n"+
+				"Please reboot.\n",
+			release,
+		),
+	)
 }
 
 // updatePackages mirrors opnsense-update -p: pkg update and pkg upgrade,
@@ -390,21 +434,30 @@ func (f *fakeFirmware) updatePackages() (GuestExecResult, error) {
 			Stderr: "",
 		}, nil
 	}
+
 	from := f.coreVersion
 	if !f.coreStuck {
 		f.coreVersion = f.coreAvailable
 	}
+
 	f.updaterVersion = f.updaterAvailable
-	return fwOK(fmt.Sprintf("Updating OPNsense repository catalogue...\n"+
-		"OPNsense repository is up to date.\n"+
-		"All repositories are up to date.\n"+
-		"Checking for upgrades (2 candidates): .. done\n"+
-		"Processing candidates (2 candidates): .. done\n"+
-		"Installed packages to be UPGRADED:\n"+
-		"\topnsense: %[1]s -> %[2]s [OPNsense]\n\n"+
-		"[1/1] Upgrading opnsense from %[1]s to %[2]s...\n"+
-		"Checking integrity... done (0 conflicting)\n"+
-		"Flushing temporary package files... done\n", from, f.coreAvailable))
+
+	return fwOK(
+		fmt.Sprintf(
+			"Updating OPNsense repository catalogue...\n"+
+				"OPNsense repository is up to date.\n"+
+				"All repositories are up to date.\n"+
+				"Checking for upgrades (2 candidates): .. done\n"+
+				"Processing candidates (2 candidates): .. done\n"+
+				"Installed packages to be UPGRADED:\n"+
+				"\topnsense: %[1]s -> %[2]s [OPNsense]\n\n"+
+				"[1/1] Upgrading opnsense from %[1]s to %[2]s...\n"+
+				"Checking integrity... done (0 conflicting)\n"+
+				"Flushing temporary package files... done\n",
+			from,
+			f.coreAvailable,
+		),
+	)
 }
 
 // stageRelease mirrors opnsense-update -u -r: fetch and stage the
@@ -412,14 +465,20 @@ func (f *fakeFirmware) updatePackages() (GuestExecResult, error) {
 func (f *fakeFirmware) stageRelease(release string) (GuestExecResult, error) {
 	f.mutations = append(f.mutations, "opnsense-update -u -r "+release)
 	f.stagedRelease = release
-	return fwOK(fmt.Sprintf("Fetching packages-%[1]s-amd64.tar: ..... done\n"+
-		"Fetching base-%[1]s-amd64.txz: ..... done\n"+
-		"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
-		"Flushing temporary package files... done\n"+
-		"Extracting packages-%[1]s-amd64.tar... done\n"+
-		"Extracting base-%[1]s-amd64.txz... done\n"+
-		"Extracting kernel-%[1]s-amd64.txz... done\n"+
-		"Please reboot.\n", release))
+
+	return fwOK(
+		fmt.Sprintf(
+			"Fetching packages-%[1]s-amd64.tar: ..... done\n"+
+				"Fetching base-%[1]s-amd64.txz: ..... done\n"+
+				"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
+				"Flushing temporary package files... done\n"+
+				"Extracting packages-%[1]s-amd64.tar... done\n"+
+				"Extracting base-%[1]s-amd64.txz... done\n"+
+				"Extracting kernel-%[1]s-amd64.txz... done\n"+
+				"Please reboot.\n",
+			release,
+		),
+	)
 }
 
 // reboot starts the shutdown and drops the exec channel, which surfaces as
@@ -434,7 +493,10 @@ func (f *fakeFirmware) reboot() (GuestExecResult, error) {
 		f.oldBootLeft = f.oldBootCommands
 		f.unreachableLeft = f.unreachableCommands
 	}
-	return GuestExecResult{}, errors.New("grpc Exec shutdown: rpc error: code = Unavailable desc = transport is closing")
+
+	return GuestExecResult{}, errors.New(
+		"grpc Exec shutdown: rpc error: code = Unavailable desc = transport is closing",
+	)
 }
 
 // boot starts a new boot with a new boot ID and a later boot time, and
@@ -451,6 +513,7 @@ func (f *fakeFirmware) boot() {
 		f.kernelVersion = f.stagedRelease
 		f.stagedRelease = ""
 	}
+
 	if f.bootsOldSets && f.oldBase != "" {
 		f.baseVersion = f.oldBase
 		f.kernelVersion = f.oldKernel
@@ -462,8 +525,13 @@ func (f *fakeFirmware) boot() {
 func (f *fakeFirmware) readBootID() (GuestExecResult, error) {
 	if f.unseededLeft > 0 {
 		f.unseededLeft--
-		return GuestExecResult{ExitCode: 1, Stdout: "", Stderr: "sysctl: kern.boot_id: Device not configured\n"}, nil
+		return GuestExecResult{
+			ExitCode: 1,
+			Stdout:   "",
+			Stderr:   "sysctl: kern.boot_id: Device not configured\n",
+		}, nil
 	}
+
 	return fwOK("Format: Length:16 Dump:0x" + f.bootID + "\n")
 }
 
@@ -475,6 +543,7 @@ func pkgVersionOrder(left, right string) string {
 		return strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '_' })
 	}
 	leftParts := split(left)
+
 	rightParts := split(right)
 	for i := 0; i < len(leftParts) || i < len(rightParts); i++ {
 		leftNum := 0
@@ -482,16 +551,20 @@ func pkgVersionOrder(left, right string) string {
 		if i < len(leftParts) {
 			leftNum, _ = strconv.Atoi(leftParts[i])
 		}
+
 		if i < len(rightParts) {
 			rightNum, _ = strconv.Atoi(rightParts[i])
 		}
+
 		if leftNum < rightNum {
 			return "<"
 		}
+
 		if leftNum > rightNum {
 			return ">"
 		}
 	}
+
 	return "="
 }
 
@@ -527,7 +600,9 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 		errByCommand: map[string]error{},
 		firmware:     productionHotfix(),
 	}
-	v := &fakeValidator{result: AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: true}})}
+	v := &fakeValidator{
+		result: AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: true}}),
+	}
 	deps := Deps{
 		Snap:     s,
 		Exec:     x,
@@ -536,6 +611,7 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 		Clock:    fixedClock{t: time.Unix(1_700_000_000, 0)},
 		Log:      slog.New(slog.NewTextHandler(testWriter{t: t}, nil)),
 	}
+
 	return deps, n, s, x, v
 }
 
@@ -544,12 +620,14 @@ type testWriter struct{ t *testing.T }
 func (w testWriter) Write(p []byte) (int, error) {
 	w.t.Helper()
 	w.t.Logf("%s", strings.TrimRight(string(p), "\n"))
+
 	return len(p), nil
 }
 
 func newOpts(t *testing.T, vmid string) Options {
 	t.Helper()
 	dir := t.TempDir()
+
 	return Options{
 		VMID:                vmid,
 		Target:              "26.7",
@@ -565,6 +643,7 @@ func newOpts(t *testing.T, vmid string) Options {
 
 func TestCanTransitionAllowsDocumentedEdges(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		from Phase
 		to   Phase
@@ -597,6 +676,7 @@ func TestEnforceTransitionReturnsTypedError(t *testing.T) {
 	if !errors.As(err, &typed) {
 		t.Fatalf("expected TransitionNotAllowedError, got %v", err)
 	}
+
 	if typed.From != PhaseRollbackFailed || typed.To != PhasePrepared {
 		t.Fatalf("error fields = %+v", typed)
 	}
@@ -608,12 +688,15 @@ func TestSnapshotNameAndIsUpgradeSnapshot(t *testing.T) {
 	if !strings.HasPrefix(name, SnapshotPrefix) {
 		t.Fatalf("snapshot name %q missing prefix", name)
 	}
+
 	if !IsUpgradeSnapshot(name) {
 		t.Fatalf("IsUpgradeSnapshot(%q) = false", name)
 	}
+
 	if IsUpgradeSnapshot("pre-deploy-1700000000") {
 		t.Fatalf("watchdog snapshot accepted as upgrade snapshot")
 	}
+
 	if IsUpgradeSnapshot(KeepPrefix + "1700000000") {
 		t.Fatalf("kept snapshot must not match IsUpgradeSnapshot")
 	}
@@ -623,23 +706,32 @@ func TestStateRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	st := State{
-		VMID: "101", DeployID: "abc", Target: "26.7", Snapshot: "pre-upgrade-26x-1",
-		Phase: PhasePrepared, UpdatedAt: time.Time{}, FailingCheck: nil,
+		VMID:         "101",
+		DeployID:     "abc",
+		Target:       "26.7",
+		Snapshot:     "pre-upgrade-26x-1",
+		Phase:        PhasePrepared,
+		UpdatedAt:    time.Time{},
+		FailingCheck: nil,
 	}
 	if err := saveStateCtx(context.Background(), dir, st, time.Unix(1, 0)); err != nil {
 		t.Fatalf("saveStateCtx: %v", err)
 	}
+
 	loaded, err := loadStateCtx(context.Background(), dir, "101")
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
+
 	if loaded.Phase != PhasePrepared || loaded.DeployID != "abc" {
 		t.Fatalf("loaded = %+v", loaded)
 	}
+
 	missing, err := loadStateCtx(context.Background(), dir, "999")
 	if err != nil {
 		t.Fatalf("LoadState missing: %v", err)
 	}
+
 	if missing.Phase != PhaseEmpty {
 		t.Fatalf("missing state phase = %q, want empty", missing.Phase)
 	}
@@ -658,22 +750,30 @@ func TestPrepareTakesSnapshotAndWritesState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
+
 	if st.Phase != PhasePrepared {
 		t.Fatalf("phase = %q, want %q", st.Phase, PhasePrepared)
 	}
+
 	if len(s.snapshots) != 1 {
 		t.Fatalf("snapshot calls = %d, want 1", len(s.snapshots))
 	}
+
 	if !strings.HasPrefix(s.snapshots[0].Snap, SnapshotPrefix) {
 		t.Fatalf("snapshot name = %q", s.snapshots[0].Snap)
 	}
+
 	if !ContainsKind(n.kinds(), KindPrepare) {
 		t.Fatalf("expected prepare kind, got %v", n.kinds())
 	}
+
 	if st.DeployID == "" {
 		t.Fatalf("DeployID empty")
 	}
-	if _, statErr := readJSON(filepath.Join(opts.StateDir, "101", st.DeployID, "metadata.json")); statErr != nil {
+
+	if _, statErr := readJSON(
+		filepath.Join(opts.StateDir, "101", st.DeployID, "metadata.json"),
+	); statErr != nil {
 		t.Fatalf("metadata.json missing: %v", statErr)
 	}
 }
@@ -688,13 +788,16 @@ func TestPrepareSnapshotFailureDoesNotWriteState(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
+
 	if st.Phase == PhasePrepared {
 		t.Fatalf("phase should not be prepared after snapshot error")
 	}
+
 	loaded, _ := loadStateCtx(context.Background(), opts.StateDir, "101")
 	if loaded.Phase == PhasePrepared {
 		t.Fatalf("state file must not be left at prepared after snapshot error")
 	}
+
 	if !ContainsKind(n.kinds(), KindPrepare) {
 		t.Fatalf("expected prepare error notify, got %v", n.kinds())
 	}
@@ -711,10 +814,12 @@ func TestExecuteHappyPathReachesExecuted(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	st, err := Execute(context.Background(), deps, opts)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
+
 	if st.Phase != PhaseExecuted {
 		t.Fatalf("phase = %q, want executed", st.Phase)
 	}
@@ -728,13 +833,16 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	st, err := Execute(context.Background(), deps, opts)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
+
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
 	}
+
 	for _, argv := range x.argvs() {
 		if argv == guestUpdater+" -bk" || argv == guestShutdown+" -r +0" {
 			t.Fatalf("ran %q after the package update failed", argv)
@@ -765,6 +873,7 @@ func TestExecuteRebootWaitCancelledTransitionsToExecuteFailed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from the cancelled reboot wait")
 	}
+
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
 	}
@@ -781,16 +890,20 @@ func TestValidatePassRecordsValidatedPass(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	st, res, err := Validate(context.Background(), deps, opts)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	if !res.AllPass {
 		t.Fatalf("AllPass = false")
 	}
+
 	if st.Phase != PhaseValidatedPass {
 		t.Fatalf("phase = %q", st.Phase)
 	}
@@ -804,16 +917,20 @@ func TestValidateFailRecordsValidatedFail(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	st, _, err := Validate(context.Background(), deps, opts)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	if st.Phase != PhaseValidatedFail {
 		t.Fatalf("phase = %q", st.Phase)
 	}
+
 	if len(st.FailingCheck) == 0 {
 		t.Fatalf("expected failing check names recorded")
 	}
@@ -831,13 +948,16 @@ func TestValidatePartialAcceptedTransitionsToPartial(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	st, _, err := Validate(context.Background(), deps, opts)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	if st.Phase != PhaseValidatedPartial {
 		t.Fatalf("phase = %q, want validated_partial", st.Phase)
 	}
@@ -857,9 +977,11 @@ func TestRollbackOnValidateFailRestoresSnapshot(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
@@ -868,9 +990,11 @@ func TestRollbackOnValidateFailRestoresSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
+
 	if st.Phase != PhaseRolledBack {
 		t.Fatalf("phase = %q", st.Phase)
 	}
+
 	if len(s.rollbacks) != 1 {
 		t.Fatalf("rollback calls = %d", len(s.rollbacks))
 	}
@@ -886,9 +1010,11 @@ func TestRollbackFailureMarksRollbackFailed(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
@@ -897,9 +1023,11 @@ func TestRollbackFailureMarksRollbackFailed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from failed rollback")
 	}
+
 	if st.Phase != PhaseRollbackFailed {
 		t.Fatalf("phase = %q, want rollback_failed", st.Phase)
 	}
+
 	if !ContainsKind(n.kinds(), KindRollbackFailed) {
 		t.Fatalf("expected rollback-failed notify, got %v", n.kinds())
 	}
@@ -917,9 +1045,11 @@ func TestCommitDeletesSnapshotAfterValidatedPass(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
@@ -928,9 +1058,11 @@ func TestCommitDeletesSnapshotAfterValidatedPass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+
 	if st.Phase != PhaseCommitted {
 		t.Fatalf("phase = %q", st.Phase)
 	}
+
 	if len(s.deletes) == 0 {
 		t.Fatalf("expected snapshot delete on commit")
 	}
@@ -943,6 +1075,7 @@ func TestCommitFromBadPhaseRefuses(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	_, err := Commit(context.Background(), deps, opts)
 	var typed TransitionNotAllowedError
 	if !errors.As(err, &typed) {
@@ -958,19 +1091,24 @@ func TestCommitIdempotent(t *testing.T) {
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	if _, err := Commit(context.Background(), deps, opts); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+
 	st, err := Commit(context.Background(), deps, opts)
 	if err != nil {
 		t.Fatalf("commit second: %v", err)
 	}
+
 	if st.Phase != PhaseCommitted {
 		t.Fatalf("phase = %q", st.Phase)
 	}
@@ -984,19 +1122,24 @@ func runOneUpgradeCycle(t *testing.T, deps Deps, opts Options) State {
 	if _, err := Prepare(ctx, deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(ctx, deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(ctx, deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	st, err := Commit(ctx, deps, opts)
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+
 	if st.Phase != PhaseCommitted {
 		t.Fatalf("phase = %q, want %q", st.Phase, PhaseCommitted)
 	}
+
 	return st
 }
 
@@ -1022,12 +1165,15 @@ func TestSecondUpgradeFollowsACommittedCycle(t *testing.T) {
 	if first.Snapshot == second.Snapshot {
 		t.Fatalf("both cycles recorded snapshot %q, want a distinct baseline each", first.Snapshot)
 	}
+
 	if first.DeployID == second.DeployID {
 		t.Fatalf("both cycles recorded deploy id %q, want a distinct deploy each", first.DeployID)
 	}
+
 	if guest.firmware.coreVersion != "26.7.3_12" {
 		t.Fatalf("core version = %q, want the second upgrade applied", guest.firmware.coreVersion)
 	}
+
 	if len(snap.snapshots) != 2 {
 		t.Fatalf("snapshot calls = %d, want one baseline per cycle", len(snap.snapshots))
 	}
@@ -1048,16 +1194,20 @@ func TestPrepareAfterRollbackFailedRefuses(t *testing.T) {
 	if _, err := Prepare(ctx, deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
+
 	if _, err := Execute(ctx, deps, opts); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+
 	if _, _, err := Validate(ctx, deps, opts); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+
 	rolled, err := Rollback(ctx, deps, opts)
 	if err == nil {
 		t.Fatalf("Rollback: want error from the failed rollback, got nil")
 	}
+
 	if rolled.Phase != PhaseRollbackFailed {
 		t.Fatalf("phase = %q, want %q", rolled.Phase, PhaseRollbackFailed)
 	}
@@ -1067,13 +1217,19 @@ func TestPrepareAfterRollbackFailedRefuses(t *testing.T) {
 	if !errors.As(err, &typed) {
 		t.Fatalf("Prepare after rollback_failed = %v, want TransitionNotAllowedError", err)
 	}
+
 	if typed.From != PhaseRollbackFailed || typed.To != PhasePrepared {
 		t.Fatalf("error fields = %+v", typed)
 	}
+
 	if st.Phase != PhaseRollbackFailed {
-		t.Fatalf("refused prepare returned phase %q, want the state left at %q",
-			st.Phase, PhaseRollbackFailed)
+		t.Fatalf(
+			"refused prepare returned phase %q, want the state left at %q",
+			st.Phase,
+			PhaseRollbackFailed,
+		)
 	}
+
 	if len(snap.snapshots) != 1 {
 		t.Fatalf("snapshot calls = %d, want the refused prepare to take none", len(snap.snapshots))
 	}
@@ -1091,15 +1247,19 @@ func TestRunHappyPathReachesValidatedPass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+
 	if out.Reached != PhaseValidatedPass {
 		t.Fatalf("reached = %q, want validated_pass", out.Reached)
 	}
+
 	if out.AutoRollback {
 		t.Fatalf("auto rollback fired on happy path")
 	}
+
 	if x.firmware.coreVersion != "26.7.3_11" {
 		t.Fatalf("core version = %q, want the hotfix 26.7.3_11 applied", x.firmware.coreVersion)
 	}
+
 	if x.firmware.reboots != 0 {
 		t.Fatalf("reboots = %d, want 0 for a package-only hotfix", x.firmware.reboots)
 	}
@@ -1116,9 +1276,11 @@ func TestRunValidateFailAutoRolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+
 	if !out.AutoRollback {
 		t.Fatalf("auto rollback did not fire on validate fail")
 	}
+
 	if out.Reached != PhaseRolledBack {
 		t.Fatalf("reached = %q, want rolled_back", out.Reached)
 	}
@@ -1143,9 +1305,11 @@ func TestGCDeletesOldSnapshotsAndKeepsYoung(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC: %v", err)
 	}
+
 	if len(res.Deleted) != 1 || res.Deleted[0] != old {
 		t.Fatalf("deleted = %v, want [%s]", res.Deleted, old)
 	}
+
 	if len(res.Skipped) != 1 || res.Skipped[0] != young {
 		t.Fatalf("skipped = %v, want [%s]", res.Skipped, young)
 	}
@@ -1166,10 +1330,12 @@ func TestGCDryRunReportsWithoutDeleting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC dry-run: %v", err)
 	}
+
 	// Dry-run reports the snapshot as "would be deleted" but must not call VMDelSnapshot.
 	if len(res.Deleted) != 1 || res.Deleted[0] != old {
 		t.Fatalf("dry-run deleted = %v, want [%s]", res.Deleted, old)
 	}
+
 	if len(s.deletes) != 0 {
 		t.Fatalf("dry-run must not call VMDelSnapshot, got %d calls", len(s.deletes))
 	}
@@ -1187,6 +1353,7 @@ func TestGCSkipsActiveDeploySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
+
 	activeSnap := st.Snapshot
 
 	// Put the active snapshot in the listing, old enough that gc would
@@ -1203,13 +1370,16 @@ func TestGCSkipsActiveDeploySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC: %v", err)
 	}
+
 	// The active snapshot must be in Skipped, not Deleted.
 	if len(res.Deleted) != 0 {
 		t.Fatalf("GC deleted active snapshot: deleted = %v", res.Deleted)
 	}
+
 	if len(res.Skipped) != 1 || res.Skipped[0] != old {
 		t.Fatalf("GC skipped = %v, want [%s]", res.Skipped, old)
 	}
+
 	if len(s.deletes) != 0 {
 		t.Fatalf("GC must not call VMDelSnapshot for active deploy, got %d calls", len(s.deletes))
 	}
@@ -1227,13 +1397,16 @@ func TestGCCommittedDeploySnapshotIsEligible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
+
 	committedSnap := st.Snapshot
 	if _, err := Execute(context.Background(), deps, opts); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
+
 	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
+
 	if _, err := Commit(context.Background(), deps, opts); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -1249,6 +1422,7 @@ func TestGCCommittedDeploySnapshotIsEligible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC: %v", err)
 	}
+
 	// Phase is committed so the snapshot is not protected; gc must delete it.
 	if len(res.Deleted) != 1 || res.Deleted[0] != oldEnough {
 		t.Fatalf("deleted = %v, want [%s]", res.Deleted, oldEnough)
@@ -1268,6 +1442,7 @@ func TestGCVMSnapshotsErrorReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from VMSnapshots failure")
 	}
+
 	if !strings.Contains(err.Error(), "VMSnapshots") {
 		t.Fatalf("error = %v, want VMSnapshots in message", err)
 	}
@@ -1290,10 +1465,12 @@ func TestGCDelSnapshotErrorSkipsInsteadOfAborting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC must not return error when VMDelSnapshot fails: %v", err)
 	}
+
 	// Both old snapshots land in Skipped; none in Deleted.
 	if len(res.Deleted) != 0 {
 		t.Fatalf("deleted = %v, want empty", res.Deleted)
 	}
+
 	if len(res.Skipped) != 2 {
 		t.Fatalf("skipped = %v, want 2 entries", res.Skipped)
 	}
@@ -1334,5 +1511,6 @@ func ContainsKind(kinds []string, want string) bool {
 			return true
 		}
 	}
+
 	return false
 }

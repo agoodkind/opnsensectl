@@ -21,9 +21,16 @@ func TestReExecCurrentReusesTheRunningArgv(t *testing.T) {
 	if err := os.WriteFile(current, []byte("\x7fELF-stub"), 0o755); err != nil {
 		t.Fatalf("write fake current: %v", err)
 	}
+
 	runningArgv := os.Args
 	t.Cleanup(func() { os.Args = runningArgv })
-	os.Args = []string{"/usr/local/sbin/mwan-opnsense", "daemon", "serve", "--config", "/usr/local/etc/opnsensectl.conf"}
+	os.Args = []string{
+		"/usr/local/sbin/mwan-opnsense",
+		"daemon",
+		"serve",
+		"--config",
+		"/usr/local/etc/opnsensectl.conf",
+	}
 
 	var gotArgv0 string
 	var gotArgv []string
@@ -32,18 +39,22 @@ func TestReExecCurrentReusesTheRunningArgv(t *testing.T) {
 		gotArgv0 = argv0
 		gotArgv = argv
 		gotEnvLen = len(envv)
+
 		return nil
 	}
 
 	if err := reExecCurrent(slog.Default(), dir, fakeExec); err != nil {
 		t.Fatalf("reExecCurrent: unexpected error: %v", err)
 	}
+
 	if gotArgv0 != current {
 		t.Errorf("exec path = %q, want %q", gotArgv0, current)
 	}
+
 	if !slices.Equal(gotArgv, os.Args) {
 		t.Errorf("argv = %q, want the running argv %q", gotArgv, os.Args)
 	}
+
 	if gotEnvLen == 0 {
 		t.Errorf("env was not passed through")
 	}
@@ -58,6 +69,7 @@ func TestReExecCurrentRefusesAnArgvWithoutACommand(t *testing.T) {
 	if err := os.WriteFile(current, []byte("\x7fELF-stub"), 0o755); err != nil {
 		t.Fatalf("write fake current: %v", err)
 	}
+
 	runningArgv := os.Args
 	t.Cleanup(func() { os.Args = runningArgv })
 	os.Args = []string{"/usr/local/sbin/mwan-opnsense"}
@@ -71,6 +83,7 @@ func TestReExecCurrentRefusesAnArgvWithoutACommand(t *testing.T) {
 	if err := reExecCurrent(slog.Default(), dir, fakeExec); err == nil {
 		t.Fatal("reExecCurrent: expected an error for an argv without a command, got nil")
 	}
+
 	if called {
 		t.Error("exec must not be called without the running command")
 	}
@@ -92,6 +105,7 @@ func TestReExecCurrentMissingSlotErrorsWithoutExec(t *testing.T) {
 	if err := reExecCurrent(slog.Default(), dir, fakeExec); err == nil {
 		t.Fatalf("reExecCurrent: expected error for missing .current, got nil")
 	}
+
 	if called {
 		t.Errorf("exec must not be called when .current is missing")
 	}

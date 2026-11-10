@@ -57,16 +57,38 @@ func defaultRebootWait() rebootWait {
 func rebootGuest(ctx context.Context, clk Clock, r *guestRunner, wait rebootWait) error {
 	before, err := readBootID(ctx, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "upgrade.Execute: read boot id before reboot failed", "err", err, "vmid", r.vmid)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Execute: read boot id before reboot failed",
+			"err",
+			err,
+			"vmid",
+			r.vmid,
+		)
 		return fmt.Errorf("read boot id before reboot: %w", err)
 	}
+
 	_, _ = r.run(ctx, guestShutdown, "-r", "+0")
-	slog.InfoContext(ctx, "upgrade.Execute: reboot issued, waiting for a new boot",
-		"vmid", r.vmid, "boot_id", before)
+	slog.InfoContext(
+		ctx,
+		"upgrade.Execute: reboot issued, waiting for a new boot",
+		"vmid",
+		r.vmid,
+		"boot_id",
+		before,
+	)
 	if _, err := waitForReboot(ctx, clk, r.exec, r.vmid, before, wait); err != nil {
-		slog.ErrorContext(ctx, "upgrade.Execute: guest did not return after reboot", "err", err, "vmid", r.vmid)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Execute: guest did not return after reboot",
+			"err",
+			err,
+			"vmid",
+			r.vmid,
+		)
 		return fmt.Errorf("post-reboot wait: %w", err)
 	}
+
 	return nil
 }
 
@@ -78,6 +100,7 @@ func readBootID(ctx context.Context, r *guestRunner) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return parseBootID(ctx, out)
 }
 
@@ -87,8 +110,10 @@ func parseBootID(ctx context.Context, out string) (string, error) {
 	if match == nil {
 		err := fmt.Errorf("%s: unrecognised output %q", sysctlBootID, out)
 		slog.DebugContext(ctx, "upgrade: boot id output not recognised", "err", err)
+
 		return "", err
 	}
+
 	return match[1], nil
 }
 
@@ -108,6 +133,7 @@ func waitForReboot(
 	deadline := start.Add(wait.timeout)
 	var bootID string
 	attempt := 0
+
 	for {
 		attempt++
 		probed, answered := probeBootID(ctx, exec, vmid, attempt, wait.probeTimeout)
@@ -115,28 +141,70 @@ func waitForReboot(
 			bootID = probed
 			break
 		}
+
 		if answered {
-			slog.DebugContext(ctx, "upgrade: guest still reports the boot before the reboot",
-				"vmid", vmid, "attempt", attempt, "boot_id", probed)
+			slog.DebugContext(
+				ctx,
+				"upgrade: guest still reports the boot before the reboot",
+				"vmid",
+				vmid,
+				"attempt",
+				attempt,
+				"boot_id",
+				probed,
+			)
 		}
+
 		if !clk.Now().Before(deadline) {
 			timedErr := fmt.Errorf("boot id did not change from %s within %s", before, wait.timeout)
-			slog.WarnContext(ctx, "upgrade: guest did not reach a new boot",
-				"err", timedErr, "vmid", vmid, "attempts", attempt)
+			slog.WarnContext(
+				ctx,
+				"upgrade: guest did not reach a new boot",
+				"err",
+				timedErr,
+				"vmid",
+				vmid,
+				"attempts",
+				attempt,
+			)
+
 			return "", timedErr
 		}
+
 		select {
 		case <-ctx.Done():
 			cancelErr := fmt.Errorf("wait for new boot: %w", ctx.Err())
-			slog.WarnContext(ctx, "upgrade: reboot wait cancelled",
-				"err", cancelErr, "vmid", vmid, "attempts", attempt)
+			slog.WarnContext(
+				ctx,
+				"upgrade: reboot wait cancelled",
+				"err",
+				cancelErr,
+				"vmid",
+				vmid,
+				"attempts",
+				attempt,
+			)
+
 			return "", cancelErr
 		case <-time.After(wait.interval):
 		}
 	}
-	slog.InfoContext(ctx, "upgrade: guest is back on a new boot",
-		"vmid", vmid, "attempts", attempt, "boot_id_before", before,
-		"boot_id_after", bootID, "waited", clk.Now().Sub(start))
+
+	slog.InfoContext(
+		ctx,
+		"upgrade: guest is back on a new boot",
+		"vmid",
+		vmid,
+		"attempts",
+		attempt,
+		"boot_id_before",
+		before,
+		"boot_id_after",
+		bootID,
+		"waited",
+		clk.Now().Sub(start),
+	)
+
 	return bootID, nil
 }
 
@@ -146,25 +214,51 @@ func waitForReboot(
 // with a boot ID. That includes a new boot whose random pool is not seeded
 // yet, where the read fails with ENXIO (sys/kern/kern_mib.c:527-529).
 func probeBootID(
-	ctx context.Context, exec Executor, vmid string, attempt int, probeTimeout time.Duration,
+	ctx context.Context,
+	exec Executor,
+	vmid string,
+	attempt int,
+	probeTimeout time.Duration,
 ) (string, bool) {
 	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	res, err := exec.GuestExec(probeCtx, vmid, guestSysctl, sysctlHexDump, sysctlBootID)
 	if err != nil {
-		slog.DebugContext(ctx, "upgrade: boot id probe failed",
-			"err", err, "vmid", vmid, "attempt", attempt)
+		slog.DebugContext(
+			ctx,
+			"upgrade: boot id probe failed",
+			"err",
+			err,
+			"vmid",
+			vmid,
+			"attempt",
+			attempt,
+		)
+
 		return "", false
 	}
+
 	if res.ExitCode != 0 {
-		slog.DebugContext(ctx, "upgrade: boot id probe exited non-zero",
-			"vmid", vmid, "attempt", attempt, "exit", res.ExitCode,
-			"stderr", strings.TrimSpace(res.Stderr))
+		slog.DebugContext(
+			ctx,
+			"upgrade: boot id probe exited non-zero",
+			"vmid",
+			vmid,
+			"attempt",
+			attempt,
+			"exit",
+			res.ExitCode,
+			"stderr",
+			strings.TrimSpace(res.Stderr),
+		)
+
 		return "", false
 	}
+
 	bootID, err := parseBootID(ctx, res.Stdout)
 	if err != nil {
 		return "", false
 	}
+
 	return bootID, true
 }

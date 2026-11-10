@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+var errRecoveredPanic = errors.New("panic")
+
 // Serve opens the virtio-serial device, wraps it in a yamux server
 // session so the single byte stream carries many gRPC connections,
 // registers OpnsenseService and TransferService against a new gRPC
@@ -27,30 +29,41 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	if opts.Server == nil {
 		return errors.New("Serve: Server required")
 	}
+
 	if opts.SerialPath == "" {
 		return errors.New("Serve: SerialPath required")
 	}
+
 	if opts.OpenSerial == nil {
 		return errors.New("Serve: OpenSerial required")
 	}
+
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
 	}
+
 	if opts.Transfer != nil {
 		opts.Server.AttachTransferManager(opts.Transfer)
 	}
 
 	rwc, err := opts.OpenSerial(opts.SerialPath)
 	if err != nil {
-		return logWrappedErrorContext(ctx, log,
-			"opnsensesvc: open serial", "opnsensesvc: open serial", err,
-			slog.String("path", opts.SerialPath))
+		return logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: open serial",
+			"opnsensesvc: open serial",
+			err,
+			slog.String("path", opts.SerialPath),
+		)
 	}
+
 	defer func() { _ = rwc.Close() }()
 	if opts.OnSerialOpen != nil {
 		opts.OnSerialOpen(opts.SerialPath)
 	}
+
 	log.InfoContext(ctx, "opnsensesvc: serial opened", "path", opts.SerialPath)
 
 	// The yamux read loop parks in a blocking serial read that the FreeBSD
@@ -72,13 +85,16 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+
 		if err := serveOneSession(ctx, log, rwc, opts.Server, opts.StopTimeout); err != nil {
 			log.WarnContext(ctx, "opnsensesvc: session ended, restarting", "err", err)
 			if !sleepOK(ctx, time.Second) {
 				return nil
 			}
+
 			continue
 		}
+
 		return nil
 	}
 }
@@ -87,7 +103,13 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 // fresh gRPC server, and serves until the session terminates or ctx
 // is cancelled. Any returned error is non-fatal at the daemon level
 // so the outer loop can build a new session.
-func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteCloser, srv *Server, stopTimeout time.Duration) error {
+func serveOneSession(
+	ctx context.Context,
+	log *slog.Logger,
+	rwc io.ReadWriteCloser,
+	srv *Server,
+	stopTimeout time.Duration,
+) error {
 	yamuxCfg := yamux.DefaultConfig()
 	yamuxCfg.EnableKeepAlive = false
 	yamuxCfg.LogOutput = io.Discard
@@ -96,12 +118,10 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 	if err != nil {
 		return fmt.Errorf("yamux server: %w", err)
 	}
+
 	defer func() { _ = session.Close() }()
 
-	grpcServer := grpc.NewServer(
-		grpc.WriteBufferSize(0),
-		grpc.Creds(insecure.NewCredentials()),
-	)
+	grpcServer := grpc.NewServer(grpc.WriteBufferSize(0), grpc.Creds(insecure.NewCredentials()))
 	mwanv1.RegisterOpnsenseServiceServer(grpcServer, srv)
 	mwanv1.RegisterTransferServiceServer(grpcServer, srv)
 
@@ -109,9 +129,15 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 	defer stopCancel()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				log.ErrorContext(stopCtx, "opnsensesvc: stop watcher panic",
-					"panic", r, "err", fmt.Errorf("panic: %v", r))
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(
+					stopCtx,
+					"opnsensesvc: stop watcher panic",
+					"panic",
+					recovered,
+					"err",
+					fmt.Errorf("%w: %v", errRecoveredPanic, recovered),
+				)
 			}
 		}()
 		<-stopCtx.Done()
@@ -124,9 +150,15 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 		gracefulDone := make(chan struct{})
 		go func() {
 			defer func() {
-				if r := recover(); r != nil {
-					log.ErrorContext(stopCtx, "opnsensesvc: graceful-stop panic",
-						"panic", r, "err", fmt.Errorf("panic: %v", r))
+				if recovered := recover(); recovered != nil {
+					log.ErrorContext(
+						stopCtx,
+						"opnsensesvc: graceful-stop panic",
+						"panic",
+						recovered,
+						"err",
+						fmt.Errorf("%w: %v", errRecoveredPanic, recovered),
+					)
 				}
 			}()
 			grpcServer.GracefulStop()
@@ -143,13 +175,16 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 		} else {
 			<-gracefulDone
 		}
+
 		_ = session.Close()
 	}()
 
 	serveErr := grpcServer.Serve(session)
-	if serveErr != nil && !errors.Is(serveErr, net.ErrClosed) && !errors.Is(serveErr, grpc.ErrServerStopped) {
+	if serveErr != nil && !errors.Is(serveErr, net.ErrClosed) &&
+		!errors.Is(serveErr, grpc.ErrServerStopped) {
 		return fmt.Errorf("grpc serve: %w", serveErr)
 	}
+
 	return nil
 }
 

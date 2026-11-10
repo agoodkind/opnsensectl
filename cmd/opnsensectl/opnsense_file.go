@@ -31,7 +31,10 @@ func fileUsage(out *os.File) {
 	fmt.Fprintln(out, "usage: mwan opnsense file <verb> [args...]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
-	fmt.Fprintln(out, "  push SOURCE PATH   upload local SOURCE to remote PATH on the OPNsense guest")
+	fmt.Fprintln(
+		out,
+		"  push SOURCE PATH   upload local SOURCE to remote PATH on the OPNsense guest",
+	)
 	fmt.Fprintln(out, "  pull PATH DEST     download remote PATH to local DEST")
 }
 
@@ -40,6 +43,7 @@ func runOPNsenseFile(args []string) int {
 		fileUsage(os.Stderr)
 		return 2
 	}
+
 	verb := fileVerb(args[0])
 	rest := args[1:]
 	switch verb {
@@ -50,6 +54,7 @@ func runOPNsenseFile(args []string) int {
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense file: unknown verb %q\n", string(verb))
 		fileUsage(os.Stderr)
+
 		return 2
 	}
 }
@@ -83,6 +88,7 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 	if tick <= 0 {
 		tick = 10 * time.Millisecond
 	}
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -91,6 +97,7 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 		}()
 		t := time.NewTicker(tick)
 		defer t.Stop()
+
 		for {
 			select {
 			case <-w.done:
@@ -99,11 +106,13 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 				if time.Since(time.Unix(0, w.last.Load())) >= w.stall {
 					w.stalled.Store(true)
 					cancel()
+
 					return
 				}
 			}
 		}
 	}()
+
 	return w
 }
 
@@ -130,9 +139,18 @@ func (w *transferWatchdog) fired() bool { return w.stalled.Load() }
 func (w *transferWatchdog) failure(ctx context.Context, op string, err error) error {
 	if w.fired() {
 		stallErr := fmt.Errorf("transfer stalled: no progress for %s", w.stall)
-		slog.ErrorContext(ctx, "mwan opnsense: "+op+" stalled", "stall", w.stall.String(), "err", stallErr)
+		slog.ErrorContext(
+			ctx,
+			"mwan opnsense: "+op+" stalled",
+			"stall",
+			w.stall.String(),
+			"err",
+			stallErr,
+		)
+
 		return fmt.Errorf("%s: %w", op, stallErr)
 	}
+
 	return wrapErr(ctx, op, err)
 }
 
@@ -145,24 +163,29 @@ func runFilePush(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense file push SOURCE PATH")
 		return 2
 	}
+
 	source := filepath.Clean(args[0])
 	remotePath := args[1]
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
 		return printAndExit("file push", err)
 	}
+
 	chunk, err := requireProbeUploadChunk(cfg)
 	if err != nil {
 		return printAndExit("file push", err)
 	}
+
 	stall, err := requireProbeTransferStall(cfg)
 	if err != nil {
 		return printAndExit("file push", err)
 	}
+
 	payload, err := os.ReadFile(source)
 	if err != nil {
 		return printAndExit("file push", fmt.Errorf("read %s: %w", source, err))
 	}
+
 	cli, ctx, cancel, err := dialProbeTransfer()
 	if err != nil {
 		return printAndExit("file push", err)
@@ -183,8 +206,14 @@ func runFilePush(args []string) int {
 	if err != nil {
 		return printAndExit("file push", err)
 	}
-	fmt.Printf("file push: bytes=%d sha256=%s backup_path=%s\n",
-		term.GetTotalBytes(), term.GetSha256Hex(), term.GetBackupPath())
+
+	fmt.Printf(
+		"file push: bytes=%d sha256=%s backup_path=%s\n",
+		term.GetTotalBytes(),
+		term.GetSha256Hex(),
+		term.GetBackupPath(),
+	)
+
 	return 0
 }
 
@@ -195,7 +224,14 @@ func runFilePush(args []string) int {
 // only its own header (path and finish step differ) and consumes the returned
 // terminal. ctx must come from dialProbeTransfer because the transfer is bounded
 // by a progress stall watchdog rather than a fixed deadline.
-func streamUpload(ctx context.Context, cli *opnsense.Client, header *mwanv1.TransferHeader, data []byte, chunk int, stall time.Duration) (*mwanv1.TransferTerminal, error) {
+func streamUpload(
+	ctx context.Context,
+	cli *opnsense.Client,
+	header *mwanv1.TransferHeader,
+	data []byte,
+	chunk int,
+	stall time.Duration,
+) (*mwanv1.TransferTerminal, error) {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	wd := startTransferWatchdog(cancel, stall)
@@ -205,17 +241,24 @@ func streamUpload(ctx context.Context, cli *opnsense.Client, header *mwanv1.Tran
 	if err != nil {
 		return nil, wd.failure(cctx, "upload: open stream", err)
 	}
+
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: header},
 	}); sendErr != nil {
 		return nil, wd.failure(cctx, "upload: send header", sendErr)
 	}
+
 	ackMsg, recvErr := stream.Recv()
 	if recvErr != nil {
 		return nil, wd.failure(cctx, "upload: recv header ack", recvErr)
 	}
+
 	if ackMsg.GetAck() == nil {
-		return nil, wrapErr(cctx, "upload: header ack missing", errors.New("first response was not an ack"))
+		return nil, wrapErr(
+			cctx,
+			"upload: header ack missing",
+			errors.New("first response was not an ack"),
+		)
 	}
 
 	hasher := sha256.New()
@@ -229,17 +272,21 @@ func streamUpload(ctx context.Context, cli *opnsense.Client, header *mwanv1.Tran
 	}); sendErr != nil {
 		return nil, wd.failure(cctx, "upload: send final", sendErr)
 	}
+
 	if closeErr := stream.CloseSend(); closeErr != nil {
 		return nil, wd.failure(cctx, "upload: close send", closeErr)
 	}
+
 	for {
 		msg, termRecvErr := stream.Recv()
 		if errors.Is(termRecvErr, io.EOF) {
 			return nil, wrapErr(cctx, "upload: stream ended", errors.New("no terminal message"))
 		}
+
 		if termRecvErr != nil {
 			return nil, wd.failure(cctx, "upload: recv terminal", termRecvErr)
 		}
+
 		wd.markProgress()
 		if term := msg.GetTerminal(); term != nil {
 			return term, nil
@@ -251,8 +298,16 @@ func streamUpload(ctx context.Context, cli *opnsense.Client, header *mwanv1.Tran
 // the per-chunk ack (application-level stop-and-wait) before sending the next so
 // the in-flight byte count stays bounded. It hashes as it goes and reports
 // progress to the watchdog after each confirmed ack.
-func uploadChunks(ctx context.Context, stream mwanv1.TransferService_UploadClient, data []byte, chunk int, hasher hash.Hash, wd *transferWatchdog) error {
+func uploadChunks(
+	ctx context.Context,
+	stream mwanv1.TransferService_UploadClient,
+	data []byte,
+	chunk int,
+	hasher hash.Hash,
+	wd *transferWatchdog,
+) error {
 	size := int64(len(data))
+
 	offset := int64(0)
 	for offset < size {
 		end := min(offset+int64(chunk), size)
@@ -260,28 +315,44 @@ func uploadChunks(ctx context.Context, stream mwanv1.TransferService_UploadClien
 		if _, hashErr := hasher.Write(segment); hashErr != nil {
 			return wrapErr(ctx, "upload: hash", hashErr)
 		}
+
 		if sendErr := stream.Send(&mwanv1.UploadRequest{
-			Body: &mwanv1.UploadRequest_Data{Data: &mwanv1.TransferDataChunk{
-				Offset: offset,
-				Data:   segment,
-			}},
+			Body: &mwanv1.UploadRequest_Data{
+				Data: &mwanv1.TransferDataChunk{
+					Offset: offset,
+					Data:   segment,
+				},
+			},
 		}); sendErr != nil {
 			return wd.failure(ctx, "upload: send data", sendErr)
 		}
+
 		ackMsg, recvErr := stream.Recv()
 		if recvErr != nil {
 			return wd.failure(ctx, "upload: recv data ack", recvErr)
 		}
+
 		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
 		if !ok {
-			return wrapErr(ctx, "upload: expected data ack", fmt.Errorf("got %T at offset %d", ackMsg.GetBody(), end))
+			return wrapErr(
+				ctx,
+				"upload: expected data ack",
+				fmt.Errorf("got %T at offset %d", ackMsg.GetBody(), end),
+			)
 		}
+
 		if dataAck.DataAck.GetCommittedOffset() != end {
-			return wrapErr(ctx, "upload: data ack offset", fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end))
+			return wrapErr(
+				ctx,
+				"upload: data ack offset",
+				fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end),
+			)
 		}
+
 		wd.markProgress()
 		offset = end
 	}
+
 	return nil
 }
 
@@ -293,16 +364,19 @@ func runFilePull(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense file pull PATH DEST")
 		return 2
 	}
+
 	remotePath := args[0]
 	dest := filepath.Clean(args[1])
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
 		return printAndExit("file pull", err)
 	}
+
 	stall, err := requireProbeTransferStall(cfg)
 	if err != nil {
 		return printAndExit("file pull", err)
 	}
+
 	cli, ctx, cancel, err := dialProbeTransfer()
 	if err != nil {
 		return printAndExit("file pull", err)
@@ -317,19 +391,23 @@ func runFilePull(args []string) int {
 	if err != nil {
 		return printAndExit("file pull", fmt.Errorf("open stream: %w", err))
 	}
+
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
-		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:             remotePath,
-			Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
-			FinishStep:       mwanv1.FinishStep_FINISH_STEP_UNSPECIFIED,
-			ResumeTransferId: "",
-			ResumeFromOffset: 0,
-			Label:            "",
-			TotalSize:        0,
-		}},
+		Body: &mwanv1.UploadRequest_Header{
+			Header: &mwanv1.TransferHeader{
+				Path:             remotePath,
+				Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+				FinishStep:       mwanv1.FinishStep_FINISH_STEP_UNSPECIFIED,
+				ResumeTransferId: "",
+				ResumeFromOffset: 0,
+				Label:            "",
+				TotalSize:        0,
+			},
+		},
 	}); sendErr != nil {
 		return printAndExit("file pull", fmt.Errorf("send header: %w", sendErr))
 	}
+
 	if closeErr := stream.CloseSend(); closeErr != nil {
 		return printAndExit("file pull", fmt.Errorf("close send: %w", closeErr))
 	}
@@ -340,35 +418,49 @@ func runFilePull(args []string) int {
 	if err != nil {
 		return printAndExit("file pull", fmt.Errorf("create %s: %w", dest, err))
 	}
+
 	defer func() {
 		if closeErr := out.Close(); closeErr != nil {
 			slog.WarnContext(ctx, "file pull: close dest", "err", closeErr, "path", dest)
 		}
 	}()
+
 	for {
 		msg, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) {
 			break
 		}
+
 		if recvErr != nil {
 			return printAndExit("file pull", wd.failure(ctx, "recv", recvErr))
 		}
+
 		if data := msg.GetData(); data != nil {
 			buf := data.GetData()
 			if _, hashErr := hasher.Write(buf); hashErr != nil {
 				return printAndExit("file pull", fmt.Errorf("hash: %w", hashErr))
 			}
+
 			if _, writeErr := out.Write(buf); writeErr != nil {
 				return printAndExit("file pull", fmt.Errorf("write %s: %w", dest, writeErr))
 			}
+
 			total += int64(len(buf))
 			wd.markProgress()
 		}
+
 		if term := msg.GetTerminal(); term != nil {
-			fmt.Printf("file pull: bytes=%d sha256=%s server_sha256=%s dest=%s\n",
-				total, hex.EncodeToString(hasher.Sum(nil)), term.GetSha256Hex(), dest)
+			fmt.Printf(
+				"file pull: bytes=%d sha256=%s server_sha256=%s dest=%s\n",
+				total,
+				hex.EncodeToString(hasher.Sum(nil)),
+				term.GetSha256Hex(),
+				dest,
+			)
+
 			return 0
 		}
 	}
+
 	return 0
 }

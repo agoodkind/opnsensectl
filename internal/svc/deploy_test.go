@@ -22,6 +22,7 @@ func newTestDeployManager(t *testing.T) (*DeployManager, string) {
 	if err := os.Mkdir(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+
 	cfg := DeployConfig{
 		BinaryDir:      binDir,
 		StatePath:      filepath.Join(tmp, "deploy.state"),
@@ -30,6 +31,7 @@ func newTestDeployManager(t *testing.T) (*DeployManager, string) {
 		NowFn:          func() time.Time { return time.Unix(1715000000, 0) },
 	}
 	dm := NewDeployManager(slog.Default(), cfg)
+
 	return dm, binDir
 }
 
@@ -84,6 +86,7 @@ func stageUpload(t *testing.T, binDir string, payload []byte) string {
 	t.Helper()
 	staged := filepath.Join(binDir, BinaryStaged)
 	writeBinary(t, staged, payload)
+
 	return staged
 }
 
@@ -125,18 +128,25 @@ func TestDeployFromPath_FirstDeployNoCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
+
 	if stagedSHA != sumHex {
 		t.Errorf("stagedSHA=%s want %s", stagedSHA, sumHex)
 	}
+
 	currentBytes, readErr := os.ReadFile(filepath.Join(binDir, BinaryCurrent))
 	if readErr != nil {
 		t.Fatalf("read current: %v", readErr)
 	}
+
 	if !bytesEqual(currentBytes, payload) {
 		t.Errorf("current does not match payload")
 	}
+
 	// previous should NOT exist on first deploy.
-	if _, statErr := os.Stat(filepath.Join(binDir, BinaryPrevious)); !errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := os.Stat(filepath.Join(binDir, BinaryPrevious)); !errors.Is(
+		statErr,
+		fs.ErrNotExist,
+	) {
 		t.Errorf("previous should be absent on first deploy, statErr=%v", statErr)
 	}
 
@@ -151,6 +161,7 @@ func TestDeployFromPath_FirstDeployNoCurrent(t *testing.T) {
 	if state.Active != sumHex {
 		t.Errorf("state.Active=%s want %s", state.Active, sumHex)
 	}
+
 	if state.Health != HealthPending {
 		t.Errorf("state.Health=%s want %s", state.Health, HealthPending)
 	}
@@ -177,6 +188,7 @@ func TestDeployFromPath_PreservesPreviousOnSecondDeploy(t *testing.T) {
 	if !bytesEqual(prevBytes, original) {
 		t.Errorf(".previous does not match original")
 	}
+
 	// .current holds the new
 	curBytes, _ := os.ReadFile(filepath.Join(binDir, BinaryCurrent))
 	if !bytesEqual(curBytes, updated) {
@@ -194,9 +206,14 @@ func TestMarkHealthy_ClearsPendingAndStampsOK(t *testing.T) {
 	payload := []byte("v-elf")
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), payload)
 	// Pre-condition: pending marker present, health=pending
-	if err := os.WriteFile(dm.cfg.PendingPath, []byte(MarkerFreshDeploy), PendingFileMode); err != nil {
+	if err := os.WriteFile(
+		dm.cfg.PendingPath,
+		[]byte(MarkerFreshDeploy),
+		PendingFileMode,
+	); err != nil {
 		t.Fatalf("seed pending: %v", err)
 	}
+
 	currentSum := sha256.Sum256(payload)
 	if err := dm.writeState(deployState{
 		Active:     hex.EncodeToString(currentSum[:]),
@@ -212,12 +229,15 @@ func TestMarkHealthy_ClearsPendingAndStampsOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mark healthy: %v", err)
 	}
+
 	if active != hex.EncodeToString(currentSum[:]) {
 		t.Errorf("active=%s want %s", active, hex.EncodeToString(currentSum[:]))
 	}
+
 	if _, statErr := os.Stat(dm.cfg.PendingPath); !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("pending marker should be gone after MarkHealthy: %v", statErr)
 	}
+
 	state, _ := dm.readStateLocked()
 	if state.Health != HealthOK {
 		t.Errorf("state.Health=%s want %s", state.Health, HealthOK)
@@ -233,6 +253,7 @@ func TestMarkHealthy_TolerantToMissingState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mark healthy on missing state: %v", err)
 	}
+
 	state, _ := dm.readStateLocked()
 	if state.Health != HealthOK {
 		t.Errorf("state.Health=%s want %s", state.Health, HealthOK)
@@ -250,14 +271,17 @@ func TestStatus_DerivesFromDiskWhenStateMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
+
 	wantActive := sha256Hex(payload)
 	wantPrev := sha256Hex(prev)
 	if active != wantActive {
 		t.Errorf("active=%s want %s", active, wantActive)
 	}
+
 	if previous != wantPrev {
 		t.Errorf("previous=%s want %s", previous, wantPrev)
 	}
+
 	if health != HealthPending {
 		t.Errorf("health=%s want %s (default when state absent)", health, HealthPending)
 	}
@@ -282,13 +306,16 @@ func TestRevert_CopiesPreviousAndArmsReExec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
+
 	if revertedTo != sha256Hex(previous) {
 		t.Errorf("revertedTo=%s want %s", revertedTo, sha256Hex(previous))
 	}
+
 	curBytes, _ := os.ReadFile(filepath.Join(binDir, BinaryCurrent))
 	if !bytesEqual(curBytes, previous) {
 		t.Errorf("current after revert should match previous")
 	}
+
 	if _, statErr := os.Stat(dm.cfg.PendingPath); statErr != nil {
 		t.Errorf("pending marker should be present after revert: %v", statErr)
 	}
@@ -300,9 +327,11 @@ func TestAtomicWriteFile_ReplacesContent(t *testing.T) {
 	if err := atomicWriteFile(target, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+
 	if err := atomicWriteFile(target, []byte("world"), 0o644); err != nil {
 		t.Fatalf("write 2: %v", err)
 	}
+
 	got, _ := os.ReadFile(target)
 	if string(got) != "world" {
 		t.Errorf("content=%q want %q", got, "world")
@@ -314,6 +343,7 @@ func TestFileSHA256_MissingReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err on missing: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("want empty sha for missing file, got %q", got)
 	}
@@ -334,17 +364,21 @@ func TestCleanStaleTemps_RemovesOrphansKeepsSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CleanStaleTemps: %v", err)
 	}
+
 	if removed != 3 {
 		t.Errorf("removed=%d, want 3", removed)
 	}
+
 	for _, gone := range []string{BinaryStaged, BinaryStagedTmp} {
 		if _, statErr := os.Stat(filepath.Join(binDir, gone)); !errors.Is(statErr, fs.ErrNotExist) {
 			t.Errorf("%s should be removed, statErr=%v", gone, statErr)
 		}
 	}
+
 	if _, statErr := os.Stat(uploadTemp); !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("upload temp should be removed, statErr=%v", statErr)
 	}
+
 	for _, kept := range []string{BinaryCurrent, BinaryPrevious} {
 		if _, statErr := os.Stat(filepath.Join(binDir, kept)); statErr != nil {
 			t.Errorf("%s should be kept, statErr=%v", kept, statErr)
@@ -359,6 +393,7 @@ func TestCleanStaleTemps_MissingDirNoError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("want nil err for missing dir, got %v", err)
 	}
+
 	if removed != 0 {
 		t.Errorf("removed=%d, want 0", removed)
 	}
@@ -375,11 +410,13 @@ func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 

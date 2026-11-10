@@ -23,6 +23,7 @@ func runOPNsenseExec(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense exec CMD [ARGS...]")
 		return 2
 	}
+
 	cmd := args[0]
 	argv := args[1:]
 	cli, ctx, cancel, err := dialProbe()
@@ -36,23 +37,32 @@ func runOPNsenseExec(args []string) int {
 	if err != nil {
 		return printAndExit("exec", err)
 	}
+
 	timeout, err := requireProbeTimeout(cfg)
 	if err != nil {
 		return printAndExit("exec", err)
 	}
+
 	timeoutSec := min(int32(timeout.Seconds()), probeMaxCommandTimeoutSec)
 	res, err := cli.RPC().Exec(ctx, cmd, argv, false, timeoutSec, nil)
 	if err != nil {
 		return printAndExit("exec", err)
 	}
-	fmt.Printf("exit_code=%d duration_ms=%d timed_out=%t\n",
-		res.ExitCode, res.DurationMs, res.TimedOut)
+
+	fmt.Printf(
+		"exit_code=%d duration_ms=%d timed_out=%t\n",
+		res.ExitCode,
+		res.DurationMs,
+		res.TimedOut,
+	)
 	if len(res.Stdout) > 0 {
 		fmt.Printf("---stdout---\n%s\n", res.Stdout)
 	}
+
 	if len(res.Stderr) > 0 {
 		fmt.Printf("---stderr---\n%s\n", res.Stderr)
 	}
+
 	return 0
 }
 
@@ -64,6 +74,7 @@ func runOPNsenseSelftest(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense selftest")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("selftest", err)
@@ -74,11 +85,20 @@ func runOPNsenseSelftest(args []string) int {
 	if _, err := rand.Read(payload); err != nil {
 		return printAndExit("selftest", fmt.Errorf("rand: %w", err))
 	}
+
 	res, err := cli.RPC().Exec(ctx, "/usr/bin/wc", []string{"-c"}, false, 30, payload)
 	if err != nil {
 		return printAndExit("selftest", err)
 	}
-	fmt.Printf("selftest size=%d exit=%d stdout_bytes=%d stderr_bytes=%d duration_ms=%d\n",
-		selftestDefaultSize, res.ExitCode, len(res.Stdout), len(res.Stderr), res.DurationMs)
+
+	fmt.Printf(
+		"selftest size=%d exit=%d stdout_bytes=%d stderr_bytes=%d duration_ms=%d\n",
+		selftestDefaultSize,
+		res.ExitCode,
+		len(res.Stdout),
+		len(res.Stderr),
+		res.DurationMs,
+	)
+
 	return 0
 }

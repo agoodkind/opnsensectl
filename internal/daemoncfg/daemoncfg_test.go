@@ -46,6 +46,7 @@ func TestLoadHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+
 	if cfg.Daemon != wantDefaults {
 		t.Errorf("daemon = %+v, want %+v", cfg.Daemon, wantDefaults)
 	}
@@ -62,6 +63,7 @@ func TestDefaultFileLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load DefaultFile: %v", err)
 	}
+
 	if cfg.Daemon != wantDefaults {
 		t.Errorf("DefaultFile daemon = %+v, want %+v", cfg.Daemon, wantDefaults)
 	}
@@ -76,9 +78,11 @@ func TestLoadMissingFileNamesIt(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load of an absent file: want error, got nil")
 	}
+
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("err = %v, want fs.ErrNotExist in the chain", err)
 	}
+
 	if !strings.Contains(err.Error(), path) {
 		t.Errorf("err = %q, want it to name %s", err, path)
 	}
@@ -167,17 +171,24 @@ logfile = "/var/log/mwan-opnsense.log"
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, "opnsensectl.conf")
-			writeTOML(t, path, tc.toml)
-			_, err := Load(path)
-			if err == nil {
-				t.Fatalf("Load: want error mentioning %q, got nil", tc.wantSub)
-			}
-			if !strings.Contains(err.Error(), tc.wantSub) || !strings.Contains(err.Error(), path) {
-				t.Errorf("error %q does not mention %q and %s", err.Error(), tc.wantSub, path)
-			}
-		})
+		t.Run(
+			tc.name,
+			func(t *testing.T) {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "opnsensectl.conf")
+				writeTOML(t, path, tc.toml)
+				_, err := Load(path)
+				if err == nil {
+					t.Fatalf("Load: want error mentioning %q, got nil", tc.wantSub)
+				}
+
+				if !strings.Contains(
+					err.Error(),
+					tc.wantSub,
+				) || !strings.Contains(err.Error(), path) {
+					t.Errorf("error %q does not mention %q and %s", err.Error(), tc.wantSub, path)
+				}
+			},
+		)
 	}
 }

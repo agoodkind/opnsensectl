@@ -16,42 +16,62 @@ func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationRe
 		slog.ErrorContext(ctx, "upgrade.Validate: invalid options", "err", err)
 		return emptyState(), emptyValidation(), err
 	}
+
 	if deps.Validate == nil {
 		err := errors.New("upgrade.Validate: deps.Validate is required")
 		slog.ErrorContext(ctx, "upgrade.Validate: deps.Validate missing", "err", err)
+
 		return emptyState(), emptyValidation(), err
 	}
+
 	clk := clockOrDefault(deps.Clock)
 
 	cur, err := loadStateCtx(ctx, opts.StateDir, opts.VMID)
 	if err != nil {
 		return emptyState(), emptyValidation(), err
 	}
-	if cur.Phase != PhaseExecuted && cur.Phase != PhaseExecuteFailed && cur.Phase != PhaseRolledBack {
+
+	if cur.Phase != PhaseExecuted && cur.Phase != PhaseExecuteFailed &&
+		cur.Phase != PhaseRolledBack {
 		err := TransitionNotAllowedError{From: cur.Phase, To: PhaseValidatedPass}
-		slog.ErrorContext(ctx, "upgrade.Validate: refusing transition",
-			"err", err, "from", cur.Phase)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Validate: refusing transition",
+			"err",
+			err,
+			"from",
+			cur.Phase,
+		)
+
 		return cur, emptyValidation(), err
 	}
 
-	result, err := deps.Validate.Validate(ctx, ValidateContext{
-		VMID:     opts.VMID,
-		Target:   opts.Target,
-		StateDir: opts.StateDir,
-		DeployID: cur.DeployID,
-		Logger:   deps.Log,
-	})
+	result, err := deps.Validate.Validate(
+		ctx,
+		ValidateContext{
+			VMID:     opts.VMID,
+			Target:   opts.Target,
+			StateDir: opts.StateDir,
+			DeployID: cur.DeployID,
+			Logger:   deps.Log,
+		},
+	)
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade.Validate: validator", "err", err, "vmid", opts.VMID)
 		return cur, result, fmt.Errorf("upgrade.Validate: validator: %w", err)
 	}
+
 	// Re-aggregate the booleans from Checks. A validator that returned
 	// an inconsistent (AllPass/AnyFail/Partial) triple gets normalized
 	// here so downstream phase selection is deterministic.
 	result = AggregateChecks(result.Checks)
 
 	deployDir := deployPathFor(opts.StateDir, opts.VMID, cur.DeployID)
-	if err := writeValidationReport(ctx, filepath.Join(deployDir, "validate.json"), result); err != nil {
+	if err := writeValidationReport(
+		ctx,
+		filepath.Join(deployDir, "validate.json"),
+		result,
+	); err != nil {
 		slog.WarnContext(ctx, "upgrade.Validate: write validation report failed", "err", err)
 	}
 
@@ -60,8 +80,17 @@ func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationRe
 
 	if cur.Phase == PhaseRolledBack && target != PhaseValidatedPass {
 		postErr := errors.New("upgrade.Validate: post-rollback validation did not pass")
-		slog.ErrorContext(ctx, "upgrade.Validate: post-rollback validation did not pass",
-			"err", postErr, "vmid", opts.VMID, "phase", cur.Phase)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Validate: post-rollback validation did not pass",
+			"err",
+			postErr,
+			"vmid",
+			opts.VMID,
+			"phase",
+			cur.Phase,
+		)
+
 		return cur, result, postErr
 	}
 
@@ -71,19 +100,8 @@ func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationRe
 		return cur, result, err
 	}
 
-	level, msg := validateLevelAndMessage(target, len(failingNames))
-	emit(ctx, deps.Notifier, level, KindValidate, opts.VMID,
-		msg,
-		slog.String("vmid", opts.VMID),
-		slog.String("phase", string(target)),
-		slog.Int("failing_count", len(failingNames)),
-	)
-	if target == PhaseValidatedPass {
-		resolve(ctx, deps.Notifier, KindValidate, opts.VMID,
-			"opnsense-upgrade validate: all checks passed")
-	}
-	slog.InfoContext(ctx, "upgrade.Validate: complete",
-		"vmid", opts.VMID, "phase", target, "failing", len(failingNames))
+	notifyValidatedState(ctx, deps, opts, target, failingNames)
+
 	return cur, result, nil
 }
 
@@ -97,6 +115,7 @@ func writeValidationReport(ctx context.Context, path string, r ValidationResult)
 		slog.ErrorContext(ctx, "upgrade: marshal validation report", "err", err, "path", path)
 		return fmt.Errorf("upgrade: marshal validation report %q: %w", path, err)
 	}
+
 	return WriteFileBytes(ctx, path, data)
 }
 
@@ -140,12 +159,14 @@ func failingCheckNames(result ValidationResult) []string {
 	if result.AllPass {
 		return nil
 	}
+
 	names := make([]string, 0, len(result.Checks))
 	for _, c := range result.Checks {
 		if !c.Pass {
 			names = append(names, c.Name)
 		}
 	}
+
 	return names
 }
 
@@ -156,8 +177,10 @@ func AggregateChecks(checks []CheckResult) ValidationResult {
 	if len(checks) == 0 {
 		return ValidationResult{Checks: checks, AllPass: false, AnyFail: false, Partial: false}
 	}
+
 	pass := 0
 	fail := 0
+
 	for _, c := range checks {
 		if c.Pass {
 			pass++
@@ -165,6 +188,7 @@ func AggregateChecks(checks []CheckResult) ValidationResult {
 			fail++
 		}
 	}
+
 	return ValidationResult{
 		Checks:  checks,
 		AllPass: fail == 0,
@@ -178,4 +202,45 @@ func AggregateChecks(checks []CheckResult) ValidationResult {
 // the error path.
 func emptyValidation() ValidationResult {
 	return ValidationResult{Checks: nil, AllPass: false, AnyFail: false, Partial: false}
+}
+
+func notifyValidatedState(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	target Phase,
+	failingNames []string,
+) {
+	level, msg := validateLevelAndMessage(target, len(failingNames))
+	emit(
+		ctx,
+		deps.Notifier,
+		level,
+		KindValidate,
+		opts.VMID,
+		msg,
+		slog.String("vmid", opts.VMID),
+		slog.String("phase", string(target)),
+		slog.Int("failing_count", len(failingNames)),
+	)
+	if target == PhaseValidatedPass {
+		resolve(
+			ctx,
+			deps.Notifier,
+			KindValidate,
+			opts.VMID,
+			"opnsense-upgrade validate: all checks passed",
+		)
+	}
+
+	slog.InfoContext(
+		ctx,
+		"upgrade.Validate: complete",
+		"vmid",
+		opts.VMID,
+		"phase",
+		target,
+		"failing",
+		len(failingNames),
+	)
 }

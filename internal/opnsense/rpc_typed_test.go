@@ -21,13 +21,18 @@ import (
 func startInProcessExecServer(t *testing.T) mwanv1.OpnsenseServiceClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := svc.NewServer(slog.New(slog.NewTextHandler(io.Discard, nil)), t.TempDir()+"/config.xml", t.TempDir())
+	srv := svc.NewServer(
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		t.TempDir()+"/config.xml",
+		t.TempDir(),
+	)
 	grpcServer := grpc.NewServer()
 	mwanv1.RegisterOpnsenseServiceServer(grpcServer, srv)
 	go func() { _ = grpcServer.Serve(lis) }()
 	t.Cleanup(grpcServer.Stop)
 
-	conn, err := grpc.NewClient("passthrough:///bufnet",
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return lis.DialContext(ctx)
@@ -36,7 +41,9 @@ func startInProcessExecServer(t *testing.T) mwanv1.OpnsenseServiceClient {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { _ = conn.Close() })
+
 	return mwanv1.NewOpnsenseServiceClient(conn)
 }
 
@@ -47,26 +54,32 @@ func TestExec_StreamRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exec open: %v", err)
 	}
+
 	if err := stream.Send(&mwanv1.ExecRequest{
-		Body: &mwanv1.ExecRequest_Header{Header: &mwanv1.ExecHeader{
-			Command:        "/bin/cat",
-			Args:           []string{},
-			Sudo:           false,
-			TimeoutSeconds: 10,
-		}},
+		Body: &mwanv1.ExecRequest_Header{
+			Header: &mwanv1.ExecHeader{
+				Command:        "/bin/cat",
+				Args:           []string{},
+				Sudo:           false,
+				TimeoutSeconds: 10,
+			},
+		},
 	}); err != nil {
 		t.Fatalf("send header: %v", err)
 	}
+
 	if err := stream.Send(&mwanv1.ExecRequest{
 		Body: &mwanv1.ExecRequest_StdinChunk{StdinChunk: []byte("hello-from-stdin\n")},
 	}); err != nil {
 		t.Fatalf("send stdin chunk: %v", err)
 	}
+
 	if err := stream.Send(&mwanv1.ExecRequest{
 		Body: &mwanv1.ExecRequest_StdinClose{StdinClose: true},
 	}); err != nil {
 		t.Fatalf("send stdin close: %v", err)
 	}
+
 	if err := stream.CloseSend(); err != nil {
 		t.Fatalf("close send: %v", err)
 	}
@@ -75,16 +88,19 @@ func TestExec_StreamRoundTrip(t *testing.T) {
 	var stdout []byte
 	var sawTerminal bool
 	var exitCode int32 = -1
+
 	for !sawTerminal {
 		select {
 		case <-deadline:
 			t.Fatalf("timed out waiting for terminal; stdout=%q", stdout)
 		default:
 		}
+
 		msg, recvErr := stream.Recv()
 		if recvErr != nil {
 			t.Fatalf("recv: %v", recvErr)
 		}
+
 		switch body := msg.GetBody().(type) {
 		case *mwanv1.ExecResponse_StdoutChunk:
 			stdout = append(stdout, body.StdoutChunk...)
@@ -96,9 +112,11 @@ func TestExec_StreamRoundTrip(t *testing.T) {
 			sawTerminal = true
 		}
 	}
+
 	if exitCode != 0 {
 		t.Fatalf("exit_code=%d want 0; stdout=%q", exitCode, stdout)
 	}
+
 	if string(stdout) != "hello-from-stdin\n" {
 		t.Fatalf("stdout=%q want %q", stdout, "hello-from-stdin\n")
 	}

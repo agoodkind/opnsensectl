@@ -55,9 +55,19 @@ func (ExecPinger) Ping(ctx context.Context, bin, target string) bool {
 	probeCtx, cancel := context.WithTimeout(ctx, hostPingTimeout)
 	defer cancel()
 	if err := exec.CommandContext(probeCtx, bin, "-c", "2", "-W", "3", target).Run(); err != nil {
-		slog.DebugContext(ctx, "upgrade: host ping failed", "err", err, "bin", bin, "target", target)
+		slog.DebugContext(
+			ctx,
+			"upgrade: host ping failed",
+			"err",
+			err,
+			"bin",
+			bin,
+			"target",
+			target,
+		)
 		return false
 	}
+
 	return true
 }
 
@@ -106,7 +116,10 @@ func NewHealthValidator(dial DaemonDialer, targetIPv4, targetIPv6 string) *Healt
 // Validate runs every check. A check that fails is a failed CheckResult, not
 // an error, so a router that does not answer drives the phase to
 // validated_fail and Run rolls it back.
-func (v *HealthValidator) Validate(ctx context.Context, vctx ValidateContext) (ValidationResult, error) {
+func (v *HealthValidator) Validate(
+	ctx context.Context,
+	vctx ValidateContext,
+) (ValidationResult, error) {
 	ipv4OK, ipv6OK, cycles := v.probeEgress(ctx)
 	checks := []CheckResult{
 		egressCheck(checkEgressIPv4, "IPv4", v.targetIPv4, ipv4OK, cycles, v.egressWindow),
@@ -114,8 +127,17 @@ func (v *HealthValidator) Validate(ctx context.Context, vctx ValidateContext) (V
 	}
 	checks = append(checks, v.daemonChecks(ctx, vctx.VMID)...)
 	result := AggregateChecks(checks)
-	slog.InfoContext(ctx, "upgrade: health checks complete",
-		"vmid", vctx.VMID, "all_pass", result.AllPass, "egress_cycles", cycles)
+	slog.InfoContext(
+		ctx,
+		"upgrade: health checks complete",
+		"vmid",
+		vctx.VMID,
+		"all_pass",
+		result.AllPass,
+		"egress_cycles",
+		cycles,
+	)
+
 	return result, nil
 }
 
@@ -127,23 +149,35 @@ func (v *HealthValidator) probeEgress(ctx context.Context) (bool, bool, int) {
 	ipv4OK := false
 	ipv6OK := false
 	cycles := 0
+
 	for {
 		cycles++
 		if v.pinger.Ping(ctx, pingBinaryIPv6, v.targetIPv6) {
 			ipv6OK = true
 		}
+
 		if v.pinger.Ping(ctx, pingBinaryIPv4, v.targetIPv4) {
 			ipv4OK = true
 		}
+
 		if ipv4OK && ipv6OK {
 			return ipv4OK, ipv6OK, cycles
 		}
+
 		if !clk.Now().Before(deadline) {
 			return ipv4OK, ipv6OK, cycles
 		}
+
 		select {
 		case <-ctx.Done():
-			slog.WarnContext(ctx, "upgrade: egress probe cancelled", "err", ctx.Err(), "cycles", cycles)
+			slog.WarnContext(
+				ctx,
+				"upgrade: egress probe cancelled",
+				"err",
+				ctx.Err(),
+				"cycles",
+				cycles,
+			)
 			return ipv4OK, ipv6OK, cycles
 		case <-time.After(v.pollInterval):
 		}
@@ -151,7 +185,12 @@ func (v *HealthValidator) probeEgress(ctx context.Context) (bool, bool, int) {
 }
 
 func egressCheck(
-	name, family, target string, answered bool, cycles int, window time.Duration,
+	name string,
+	family string,
+	target string,
+	answered bool,
+	cycles int,
+	window time.Duration,
 ) CheckResult {
 	if answered {
 		return CheckResult{
@@ -160,11 +199,17 @@ func egressCheck(
 			Note: fmt.Sprintf("%s target %s answered a ping from the host", family, target),
 		}
 	}
+
 	return CheckResult{
 		Name: name,
 		Pass: false,
-		Note: fmt.Sprintf("%s target %s did not answer a ping from the host within %s (%d probe cycles)",
-			family, target, window, cycles),
+		Note: fmt.Sprintf(
+			"%s target %s did not answer a ping from the host within %s (%d probe cycles)",
+			family,
+			target,
+			window,
+			cycles,
+		),
 	}
 }
 
@@ -175,16 +220,26 @@ func (v *HealthValidator) daemonChecks(ctx context.Context, vmid string) []Check
 	if err != nil {
 		note := fmt.Sprintf("dial host bridge: %v", err)
 		slog.WarnContext(ctx, "upgrade: host bridge dial failed", "err", err, "vmid", vmid)
+
 		return []CheckResult{
 			{Name: checkDaemonVersion, Pass: false, Note: note},
 			{Name: checkExecHostname, Pass: false, Note: note},
 		}
 	}
+
 	defer func() {
 		if closeErr := closeClient(); closeErr != nil {
-			slog.WarnContext(ctx, "upgrade: close host bridge client", "err", closeErr, "vmid", vmid)
+			slog.WarnContext(
+				ctx,
+				"upgrade: close host bridge client",
+				"err",
+				closeErr,
+				"vmid",
+				vmid,
+			)
 		}
 	}()
+
 	return []CheckResult{
 		daemonVersionCheck(ctx, client, vmid),
 		execRoundTripCheck(ctx, client, vmid),
@@ -197,39 +252,86 @@ func daemonVersionCheck(ctx context.Context, client DaemonRPCClient, vmid string
 	resp, err := client.Version(callCtx, &mwanv1.VersionRequest{})
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade: daemon version failed", "err", err, "vmid", vmid)
-		return CheckResult{Name: checkDaemonVersion, Pass: false, Note: fmt.Sprintf("Version RPC: %v", err)}
+		return CheckResult{
+			Name: checkDaemonVersion,
+			Pass: false,
+			Note: fmt.Sprintf("Version RPC: %v", err),
+		}
 	}
+
 	if resp == nil {
-		return CheckResult{Name: checkDaemonVersion, Pass: false, Note: "Version RPC returned no response"}
+		return CheckResult{
+			Name: checkDaemonVersion,
+			Pass: false,
+			Note: "Version RPC returned no response",
+		}
 	}
+
 	return CheckResult{
 		Name: checkDaemonVersion,
 		Pass: true,
-		Note: fmt.Sprintf("version=%s commit=%s dirty=%t binhash=%s",
-			resp.GetVersion(), resp.GetBuildCommit(), resp.GetBuildDirty(), resp.GetBuildBinhash()),
+		Note: fmt.Sprintf(
+			"version=%s commit=%s dirty=%t binhash=%s",
+			resp.GetVersion(),
+			resp.GetBuildCommit(),
+			resp.GetBuildDirty(),
+			resp.GetBuildBinhash(),
+		),
 	}
 }
 
 func execRoundTripCheck(ctx context.Context, client DaemonRPCClient, vmid string) CheckResult {
 	callCtx, cancel := context.WithTimeout(ctx, daemonRPCTimeout)
 	defer cancel()
-	res, err := client.Exec(callCtx, execRoundTripCommand, nil, false, execRoundTripTimeoutSeconds, nil)
+	res, err := client.Exec(
+		callCtx,
+		execRoundTripCommand,
+		nil,
+		false,
+		execRoundTripTimeoutSeconds,
+		nil,
+	)
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade: exec round trip failed", "err", err, "vmid", vmid)
-		return CheckResult{Name: checkExecHostname, Pass: false, Note: fmt.Sprintf("Exec %s: %v", execRoundTripCommand, err)}
+		return CheckResult{
+			Name: checkExecHostname,
+			Pass: false,
+			Note: fmt.Sprintf("Exec %s: %v", execRoundTripCommand, err),
+		}
 	}
+
 	if res == nil {
-		return CheckResult{Name: checkExecHostname, Pass: false, Note: "Exec RPC returned no result"}
+		return CheckResult{
+			Name: checkExecHostname,
+			Pass: false,
+			Note: "Exec RPC returned no result",
+		}
 	}
+
 	if res.TimedOut {
-		return CheckResult{Name: checkExecHostname, Pass: false, Note: execRoundTripCommand + " timed out on the router"}
+		return CheckResult{
+			Name: checkExecHostname,
+			Pass: false,
+			Note: execRoundTripCommand + " timed out on the router",
+		}
 	}
+
 	if res.ExitCode != 0 {
 		return CheckResult{
 			Name: checkExecHostname,
 			Pass: false,
-			Note: fmt.Sprintf("%s exited %d: %s", execRoundTripCommand, res.ExitCode, strings.TrimSpace(string(res.Stderr))),
+			Note: fmt.Sprintf(
+				"%s exited %d: %s",
+				execRoundTripCommand,
+				res.ExitCode,
+				strings.TrimSpace(string(res.Stderr)),
+			),
 		}
 	}
-	return CheckResult{Name: checkExecHostname, Pass: true, Note: strings.TrimSpace(string(res.Stdout))}
+
+	return CheckResult{
+		Name: checkExecHostname,
+		Pass: true,
+		Note: strings.TrimSpace(string(res.Stdout)),
+	}
 }

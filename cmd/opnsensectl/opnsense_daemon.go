@@ -35,16 +35,34 @@ func daemonUsage(out *os.File) {
 	fmt.Fprintln(out, "usage: opnsensectl daemon <verb> [args...]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
-	fmt.Fprintln(out, "  serve --config PATH         run the in-VM daemon (the rc.d service command)")
+	fmt.Fprintln(
+		out,
+		"  serve --config PATH         run the in-VM daemon (the rc.d service command)",
+	)
 	fmt.Fprintln(out, "  is-enabled                  exit 0 if rc.d service is enabled")
 	fmt.Fprintln(out, "  version                     print build identity from the running daemon")
-	fmt.Fprintln(out, "  state                       print deploy state (active sha, previous, health, deployed_at)")
+	fmt.Fprintln(
+		out,
+		"  state                       print deploy state (active sha, previous, health, deployed_at)",
+	)
 	fmt.Fprintln(out, "  push BINARY                 upload BINARY to the daemon staging path")
-	fmt.Fprintln(out, "  stage SHA                   verify+swap a previously pushed binary by sha256")
-	fmt.Fprintln(out, "  restart                     trigger the daemon to exit so rc.d respawns it")
+	fmt.Fprintln(
+		out,
+		"  stage SHA                   verify+swap a previously pushed binary by sha256",
+	)
+	fmt.Fprintln(
+		out,
+		"  restart                     trigger the daemon to exit so rc.d respawns it",
+	)
 	fmt.Fprintln(out, "  revert                      restore the previous staged binary")
-	fmt.Fprintln(out, "  gc                          probe the GC surface (daemon runs sweep on startup)")
-	fmt.Fprintln(out, "  mark-healthy                clear pending-verify and stamp health=ok for the active binary")
+	fmt.Fprintln(
+		out,
+		"  gc                          probe the GC surface (daemon runs sweep on startup)",
+	)
+	fmt.Fprintln(
+		out,
+		"  mark-healthy                clear pending-verify and stamp health=ok for the active binary",
+	)
 }
 
 func runOPNsenseDaemon(args []string) int {
@@ -52,6 +70,7 @@ func runOPNsenseDaemon(args []string) int {
 		daemonUsage(os.Stderr)
 		return 2
 	}
+
 	verb := daemonVerb(args[0])
 	rest := args[1:]
 	switch verb {
@@ -78,6 +97,7 @@ func runOPNsenseDaemon(args []string) int {
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense daemon: unknown verb %q\n", string(verb))
 		daemonUsage(os.Stderr)
+
 		return 2
 	}
 }
@@ -91,20 +111,25 @@ func dialProbe() (*opnsense.Client, context.Context, context.CancelFunc, error) 
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	target, err := requireProbeTarget(cfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	timeout, err := requireProbeTimeout(cfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	cli, err := opnsense.Dial(target)
 	if err != nil {
 		slog.Error("opnsense: dial", "err", err, "target", target)
 		return nil, nil, nil, fmt.Errorf("opnsense: dial %s: %w", target, err)
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
 	return cli, ctx, cancel, nil
 }
 
@@ -119,16 +144,20 @@ func dialProbeTransfer() (*opnsense.Client, context.Context, context.CancelFunc,
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	target, err := requireProbeTarget(cfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	cli, err := opnsense.Dial(target)
 	if err != nil {
 		slog.Error("opnsense: dial", "err", err, "target", target)
 		return nil, nil, nil, fmt.Errorf("opnsense: dial %s: %w", target, err)
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
+
 	return cli, ctx, cancel, nil
 }
 
@@ -155,8 +184,15 @@ func runDaemonRPCVersion() int {
 	if err != nil {
 		return printAndExit("daemon version", err)
 	}
-	fmt.Printf("version=%s commit=%s dirty=%t binhash=%s\n",
-		resp.GetVersion(), resp.GetBuildCommit(), resp.GetBuildDirty(), resp.GetBuildBinhash())
+
+	fmt.Printf(
+		"version=%s commit=%s dirty=%t binhash=%s\n",
+		resp.GetVersion(),
+		resp.GetBuildCommit(),
+		resp.GetBuildDirty(),
+		resp.GetBuildBinhash(),
+	)
+
 	return 0
 }
 
@@ -167,14 +203,24 @@ func runDaemonState() int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{
-		Mark: mwanv1.DeployStatusRequest_MARK_UNSPECIFIED,
-	})
+	resp, err := cli.RPC().DeployStatus(
+		ctx,
+		&mwanv1.DeployStatusRequest{
+			Mark: mwanv1.DeployStatusRequest_MARK_UNSPECIFIED,
+		},
+	)
 	if err != nil {
 		return printAndExit("daemon state", err)
 	}
-	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
-		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
+
+	fmt.Printf(
+		"active=%s previous=%s health=%s deployed_at=%d\n",
+		resp.GetActiveSha256(),
+		resp.GetPreviousSha256(),
+		resp.GetHealth(),
+		resp.GetDeployedAt(),
+	)
+
 	return 0
 }
 
@@ -190,14 +236,24 @@ func runDaemonMarkHealthy() int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{
-		Mark: mwanv1.DeployStatusRequest_MARK_HEALTHY,
-	})
+	resp, err := cli.RPC().DeployStatus(
+		ctx,
+		&mwanv1.DeployStatusRequest{
+			Mark: mwanv1.DeployStatusRequest_MARK_HEALTHY,
+		},
+	)
 	if err != nil {
 		return printAndExit("daemon mark-healthy", err)
 	}
-	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
-		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
+
+	fmt.Printf(
+		"active=%s previous=%s health=%s deployed_at=%d\n",
+		resp.GetActiveSha256(),
+		resp.GetPreviousSha256(),
+		resp.GetHealth(),
+		resp.GetDeployedAt(),
+	)
+
 	return 0
 }
 
@@ -212,23 +268,28 @@ func runDaemonPush(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense daemon push BINARY")
 		return 2
 	}
+
 	binaryPath := filepath.Clean(args[0])
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
+
 	chunk, err := requireProbeUploadChunk(cfg)
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
+
 	stall, err := requireProbeTransferStall(cfg)
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
+
 	content, err := os.ReadFile(binaryPath)
 	if err != nil {
 		return printAndExit("daemon push", fmt.Errorf("read %s: %w", binaryPath, err))
 	}
+
 	cli, ctx, cancel, err := dialProbeTransfer()
 	if err != nil {
 		return printAndExit("daemon push", err)
@@ -249,9 +310,15 @@ func runDaemonPush(args []string) int {
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
-	fmt.Printf("daemon push: bytes=%d sha256=%s staged_path=%s\n",
-		term.GetTotalBytes(), term.GetSha256Hex(), term.GetStagedPath())
+
+	fmt.Printf(
+		"daemon push: bytes=%d sha256=%s staged_path=%s\n",
+		term.GetTotalBytes(),
+		term.GetSha256Hex(),
+		term.GetStagedPath(),
+	)
 	fmt.Printf("pushed sha256=%s\n", term.GetSha256Hex())
+
 	return 0
 }
 
@@ -260,6 +327,7 @@ func runDaemonStage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense daemon stage SHA")
 		return 2
 	}
+
 	stagedSHA := args[0]
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
@@ -267,15 +335,19 @@ func runDaemonStage(args []string) int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.OpnsenseClient().StageBinary(ctx, &mwanv1.StageBinaryRequest{
-		StagedSha256: stagedSHA,
-		VersionStr:   "",
-	})
+	resp, err := cli.OpnsenseClient().StageBinary(
+		ctx,
+		&mwanv1.StageBinaryRequest{
+			StagedSha256: stagedSHA,
+			VersionStr:   "",
+		},
+	)
 	if err != nil {
 		return printAndExit("daemon stage", err)
 	}
-	fmt.Printf("staged active=%s previous=%s\n",
-		resp.GetActiveSha256(), resp.GetPreviousPath())
+
+	fmt.Printf("staged active=%s previous=%s\n", resp.GetActiveSha256(), resp.GetPreviousPath())
+
 	return 0
 }
 
@@ -286,10 +358,15 @@ func runDaemonRestart() int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	if _, err := cli.OpnsenseClient().RestartDaemon(ctx, &mwanv1.RestartDaemonRequest{}); err != nil {
+	if _, err := cli.OpnsenseClient().RestartDaemon(
+		ctx,
+		&mwanv1.RestartDaemonRequest{},
+	); err != nil {
 		return printAndExit("daemon restart", err)
 	}
+
 	fmt.Println("daemon restart: initiated")
+
 	return 0
 }
 
@@ -304,7 +381,9 @@ func runDaemonRevert() int {
 	if err != nil {
 		return printAndExit("daemon revert", err)
 	}
+
 	fmt.Printf("reverted_to=%s\n", resp.GetRevertedToSha256())
+
 	return 0
 }
 
@@ -315,9 +394,14 @@ func runDaemonGC() int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	if _, err := cli.TransferClient().Cancel(ctx, &mwanv1.CancelRequest{TransferId: ""}); err != nil {
+	if _, err := cli.TransferClient().Cancel(
+		ctx,
+		&mwanv1.CancelRequest{TransferId: ""},
+	); err != nil {
 		slog.WarnContext(ctx, "daemon gc: cancel surface", "err", err)
 	}
+
 	fmt.Println("daemon gc: server runs GC on startup; nothing to drive from probe")
+
 	return 0
 }

@@ -16,6 +16,7 @@ func loadFixture(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("read fixture %q: %v", path, err)
 	}
+
 	return data
 }
 
@@ -25,6 +26,7 @@ func mustParse(t *testing.T, data []byte) *etree.Document {
 	if err := doc.ReadFromBytes(data); err != nil {
 		t.Fatalf("parse XML: %v", err)
 	}
+
 	return doc
 }
 
@@ -38,10 +40,22 @@ func defaultSubs() Substitutions {
 			// below rewrites the prod "home.goodkind.io" value in the serialized
 			// XML and avoids double-prefixing the testbed domain.
 			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router"},
-			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
-			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
+			{
+				Name:     "wan ipaddr",
+				XPath:    "//opnsense/interfaces/wan/ipaddr",
+				NewValue: "10.240.250.2",
+			},
+			{
+				Name:     "wan ipaddrv6",
+				XPath:    "//opnsense/interfaces/wan/ipaddrv6",
+				NewValue: "3d06:bad:b01:2fe::2",
+			},
 			{Name: "vmnet v4", XPath: "//opnsense/interfaces/opt6/ipaddr", NewValue: "10.240.4.1"},
-			{Name: "vmnet v6", XPath: "//opnsense/interfaces/opt6/ipaddrv6", NewValue: "3d06:bad:b01:210::1"},
+			{
+				Name:     "vmnet v6",
+				XPath:    "//opnsense/interfaces/opt6/ipaddrv6",
+				NewValue: "3d06:bad:b01:210::1",
+			},
 		},
 		RemoveElements: []ElementRemove{
 			{Name: "wireguard peers", XPath: "//opnsense/OPNsense/wireguard/client/clients/client"},
@@ -60,16 +74,19 @@ func TestApplyRoundTripDeviceNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	doc := mustParse(t, out)
 	ifs := doc.FindElements("//opnsense//if")
 	if len(ifs) == 0 {
 		t.Fatal("expected at least one <if> element after transform")
 	}
+
 	for _, el := range ifs {
 		got := strings.TrimSpace(el.Text())
 		if got == "iavf0" {
 			t.Errorf("found stale iavf0 reference at %s", el.GetPath())
 		}
+
 		if got != "vtnet0" {
 			t.Errorf("unexpected <if> value %q at %s; want vtnet0", got, el.GetPath())
 		}
@@ -81,7 +98,9 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	doc := mustParse(t, out)
+
 	cases := []struct {
 		xpath string
 		want  string
@@ -94,16 +113,20 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 		{"//opnsense/interfaces/opt6/ipaddrv6", "3d06:bad:b01:210::1"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.xpath, func(t *testing.T) {
-			el := doc.FindElement(tc.xpath)
-			if el == nil {
-				t.Fatalf("xpath %q matched no element", tc.xpath)
-			}
-			got := strings.TrimSpace(el.Text())
-			if got != tc.want {
-				t.Errorf("xpath %q: got %q, want %q", tc.xpath, got, tc.want)
-			}
-		})
+		t.Run(
+			tc.xpath,
+			func(t *testing.T) {
+				el := doc.FindElement(tc.xpath)
+				if el == nil {
+					t.Fatalf("xpath %q matched no element", tc.xpath)
+				}
+
+				got := strings.TrimSpace(el.Text())
+				if got != tc.want {
+					t.Errorf("xpath %q: got %q, want %q", tc.xpath, got, tc.want)
+				}
+			},
+		)
 	}
 }
 
@@ -117,6 +140,7 @@ func TestApplyKeepsVMNETAndDropsManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	doc := mustParse(t, out)
 
 	if el := doc.FindElement("//opnsense/interfaces/opt9"); el != nil {
@@ -127,6 +151,7 @@ func TestApplyKeepsVMNETAndDropsManagement(t *testing.T) {
 	if vmnet == nil {
 		t.Fatal("VMNET interface opt6 is missing after the transform")
 	}
+
 	for _, tc := range []struct{ child, want string }{
 		{"if", "vtnet0"},
 		{"ipaddr", "10.240.4.1"},
@@ -138,6 +163,7 @@ func TestApplyKeepsVMNETAndDropsManagement(t *testing.T) {
 			t.Errorf("opt6 has no %s child", tc.child)
 			continue
 		}
+
 		if got := strings.TrimSpace(el.Text()); got != tc.want {
 			t.Errorf("opt6/%s = %q, want %q", tc.child, got, tc.want)
 		}
@@ -149,9 +175,11 @@ func TestApplyTextLiteralReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	if strings.Contains(string(out), "10.250.0.0/24") {
 		t.Errorf("output still contains prod literal 10.250.0.0/24")
 	}
+
 	if !strings.Contains(string(out), "10.240.0.0/24") {
 		t.Errorf("output missing testbed literal 10.240.0.0/24")
 	}
@@ -162,6 +190,7 @@ func TestApplyRemovesWireguardPeers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	doc := mustParse(t, out)
 	peers := doc.FindElements("//opnsense/OPNsense/wireguard/client/clients/client")
 	if len(peers) != 0 {
@@ -203,7 +232,8 @@ func TestDecodeEmptyInputReturnsError(t *testing.T) {
 }
 
 func TestDecodeRoundTrip(t *testing.T) {
-	yamlBytes := []byte(`device_names:
+	yamlBytes := []byte(
+		`device_names:
   - name: "iavf0 to vtnet0"
     from: "iavf0"
     to:   "vtnet0"
@@ -222,23 +252,30 @@ text_literals:
   - name: "nat src"
     from: "10.250.0.0/24"
     to:   "10.240.0.0/24"
-`)
+`,
+	)
 	got, err := Decode(yamlBytes)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if len(got.DeviceNames) != 1 || got.DeviceNames[0].From != "iavf0" || got.DeviceNames[0].To != "vtnet0" {
+
+	if len(got.DeviceNames) != 1 || got.DeviceNames[0].From != "iavf0" ||
+		got.DeviceNames[0].To != "vtnet0" {
 		t.Errorf("DeviceNames roundtrip mismatch: %+v", got.DeviceNames)
 	}
+
 	if len(got.XPathSets) != 1 || got.XPathSets[0].NewValue != "router" {
 		t.Errorf("XPathSets roundtrip mismatch: %+v", got.XPathSets)
 	}
+
 	if len(got.RemoveElements) != 1 {
 		t.Errorf("RemoveElements roundtrip mismatch: %+v", got.RemoveElements)
 	}
+
 	if len(got.InsertElements) != 1 || got.InsertElements[0].ParentXPath != "//opnsense/filter" {
 		t.Errorf("InsertElements roundtrip mismatch: %+v", got.InsertElements)
 	}
+
 	if len(got.TextLiterals) != 1 || got.TextLiterals[0].To != "10.240.0.0/24" {
 		t.Errorf("TextLiterals roundtrip mismatch: %+v", got.TextLiterals)
 	}
@@ -268,13 +305,16 @@ func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
+
 	doc := mustParse(t, out)
 	rules := doc.FindElements(`//opnsense/filter/rule`)
 	if len(rules) != 2 {
 		t.Fatalf("expected 2 rules after insert, got %d", len(rules))
 	}
+
 	inserted := doc.FindElement(`//opnsense/filter/rule[descr]`)
 	var found bool
+
 	for _, el := range rules {
 		descr := el.FindElement("descr")
 		if descr != nil && strings.Contains(descr.Text(), fixtureDescr) {
@@ -282,9 +322,9 @@ func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
 			break
 		}
 	}
+
 	if !found {
-		t.Errorf("inserted rule with fixture descr not found; last rule descr: %v",
-			inserted)
+		t.Errorf("inserted rule with fixture descr not found; last rule descr: %v", inserted)
 	}
 }
 
@@ -353,6 +393,7 @@ func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
 	if domainEl == nil {
 		t.Fatal("xpath //opnsense/system/domain matched no element")
 	}
+
 	gotDomain := strings.TrimSpace(domainEl.Text())
 	if gotDomain != "suburban.goodkind.io" {
 		t.Errorf("<domain> got %q, want %q", gotDomain, "suburban.goodkind.io")
@@ -363,6 +404,7 @@ func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
 	if dsEl == nil {
 		t.Fatal("xpath //opnsense/system/dnssearchdomain matched no element")
 	}
+
 	gotDS := strings.TrimSpace(dsEl.Text())
 	if gotDS != "router.suburban.goodkind.io" {
 		t.Errorf("<dnssearchdomain> got %q, want %q", gotDS, "router.suburban.goodkind.io")
@@ -395,7 +437,11 @@ func TestApplyXPathSetRejectsEmptyXPath(t *testing.T) {
 func TestApplyXPathSetMissingMatchIsTolerated(t *testing.T) {
 	subs := Substitutions{
 		XPathSets: []XPathSet{
-			{Name: "no match", XPath: "//opnsense/system/this-element-does-not-exist", NewValue: "value"},
+			{
+				Name:     "no match",
+				XPath:    "//opnsense/system/this-element-does-not-exist",
+				NewValue: "value",
+			},
 		},
 	}
 	if _, err := Apply(loadFixture(t), subs); err != nil {

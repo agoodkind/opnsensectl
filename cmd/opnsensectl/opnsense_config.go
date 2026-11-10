@@ -31,7 +31,10 @@ func configUsage(out *os.File) {
 	fmt.Fprintln(out, "  read                          fetch config.xml metadata from the daemon")
 	fmt.Fprintln(out, "  write FILE                    write FILE as the new config.xml")
 	fmt.Fprintln(out, "  backup                        snapshot the current config.xml")
-	fmt.Fprintln(out, "  import SOURCE                 transform SOURCE prod XML into the testbed-shaped output (paths from TOML)")
+	fmt.Fprintln(
+		out,
+		"  import SOURCE                 transform SOURCE prod XML into the testbed-shaped output (paths from TOML)",
+	)
 	fmt.Fprintln(out, "  xpath get EXPR                evaluate EXPR and print matches")
 	fmt.Fprintln(out, "  xpath set EXPR VALUE          set EXPR to VALUE")
 	fmt.Fprintln(out, "  xpath delete EXPR             delete nodes matching EXPR")
@@ -44,6 +47,7 @@ func runOPNsenseConfig(args []string) int {
 		configUsage(os.Stderr)
 		return 2
 	}
+
 	verb := configVerb(args[0])
 	rest := args[1:]
 	switch verb {
@@ -64,6 +68,7 @@ func runOPNsenseConfig(args []string) int {
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense config: unknown verb %q\n", string(verb))
 		configUsage(os.Stderr)
+
 		return 2
 	}
 }
@@ -73,6 +78,7 @@ func runConfigRead(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config read")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config read", err)
@@ -83,7 +89,9 @@ func runConfigRead(args []string) int {
 	if err != nil {
 		return printAndExit("config read", err)
 	}
+
 	fmt.Printf("config_bytes=%d sha256=%s\n", resp.SizeBytes, resp.Sha256)
+
 	return 0
 }
 
@@ -92,6 +100,7 @@ func runConfigWrite(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config write FILE")
 		return 2
 	}
+
 	path := filepath.Clean(args[0])
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
@@ -103,11 +112,14 @@ func runConfigWrite(args []string) int {
 	if err != nil {
 		return printAndExit("config write", fmt.Errorf("read %s: %w", path, err))
 	}
+
 	resp, err := cli.RPC().WriteConfigXML(ctx, content, "")
 	if err != nil {
 		return printAndExit("config write", err)
 	}
+
 	fmt.Printf("backup_path=%s bytes_written=%d\n", resp.BackupPath, resp.BytesWritten)
+
 	return 0
 }
 
@@ -116,6 +128,7 @@ func runConfigBackup(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config backup")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config backup", err)
@@ -126,7 +139,9 @@ func runConfigBackup(args []string) int {
 	if err != nil {
 		return printAndExit("config backup", err)
 	}
+
 	fmt.Printf("backup_path=%s size_bytes=%d\n", resp.GetBackupPath(), resp.GetSizeBytes())
+
 	return 0
 }
 
@@ -139,18 +154,27 @@ func runConfigImport(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config import SOURCE")
 		return 2
 	}
+
 	source := args[0]
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
 		return printAndExit("config import", err)
 	}
+
 	subsPath := cfg.OPNsense.ConfigImport.Substitutions
 	outputPath := cfg.OPNsense.ConfigImport.Output
 	if subsPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].substitutions is required in %s", cfg.Source))
+		return printAndExit(
+			"config import",
+			fmt.Errorf("[opnsense.config.import].substitutions is required in %s", cfg.Source),
+		)
 	}
+
 	if outputPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].output is required in %s", cfg.Source))
+		return printAndExit(
+			"config import",
+			fmt.Errorf("[opnsense.config.import].output is required in %s", cfg.Source),
+		)
 	}
 
 	cleanInput := filepath.Clean(source)
@@ -163,18 +187,23 @@ func runConfigImport(args []string) int {
 	if err != nil {
 		return printAndExit("config import", fmt.Errorf("read %s: %w", cleanInput, err))
 	}
+
 	subs, err := configxform.Load(cleanSubs)
 	if err != nil {
 		return printAndExit("config import", fmt.Errorf("load substitutions: %w", err))
 	}
+
 	transformed, err := configxform.Apply(inputBytes, subs)
 	if err != nil {
 		return printAndExit("config import", fmt.Errorf("apply transform: %w", err))
 	}
+
 	if err := writeOutputAtomic(cleanOutput, transformed); err != nil {
 		return printAndExit("config import", fmt.Errorf("write %s: %w", cleanOutput, err))
 	}
+
 	fmt.Printf("config import: bytes=%d output=%s\n", len(transformed), cleanOutput)
+
 	return 0
 }
 
@@ -189,34 +218,43 @@ func writeOutputAtomic(dest string, content []byte) error {
 	if err != nil {
 		return fmt.Errorf("create temp file in %q: %w", dir, err)
 	}
+
 	tmpName := tmp.Name()
 	cleanup := func() {
-		if removeErr := os.Remove(tmpName); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := os.Remove(tmpName); removeErr != nil &&
+			!errors.Is(removeErr, os.ErrNotExist) {
 			slog.Warn("config import: remove temp file failed", "path", tmpName, "err", removeErr)
 		}
 	}
 	if _, err := tmp.Write(content); err != nil {
 		_ = tmp.Close()
 		cleanup()
+
 		return fmt.Errorf("write temp file %q: %w", tmpName, err)
 	}
+
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		cleanup()
+
 		return fmt.Errorf("sync temp file %q: %w", tmpName, err)
 	}
+
 	if err := tmp.Close(); err != nil {
 		cleanup()
 		return fmt.Errorf("close temp file %q: %w", tmpName, err)
 	}
+
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		cleanup()
 		return fmt.Errorf("chmod temp file %q: %w", tmpName, err)
 	}
+
 	if err := os.Rename(tmpName, dest); err != nil {
 		cleanup()
 		return fmt.Errorf("rename temp %q to %q: %w", tmpName, dest, err)
 	}
+
 	return nil
 }
 
@@ -234,6 +272,7 @@ func runConfigXPath(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config xpath {get|set|delete} ...")
 		return 2
 	}
+
 	verb := xpathSubVerb(args[0])
 	rest := args[1:]
 	switch verb {
@@ -254,6 +293,7 @@ func runConfigXPathGet(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config xpath get EXPR")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config xpath get", err)
@@ -264,9 +304,11 @@ func runConfigXPathGet(args []string) int {
 	if err != nil {
 		return printAndExit("config xpath get", err)
 	}
+
 	for _, m := range matches {
 		fmt.Println(m)
 	}
+
 	return 0
 }
 
@@ -275,17 +317,23 @@ func runConfigXPathSet(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config xpath set EXPR VALUE")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config xpath set", err)
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().XPathSet(ctx, &mwanv1.XPathSetRequest{Expression: args[0], NewValue: args[1]})
+	resp, err := cli.RPC().XPathSet(
+		ctx,
+		&mwanv1.XPathSetRequest{Expression: args[0], NewValue: args[1]},
+	)
 	if err != nil {
 		return printAndExit("config xpath set", err)
 	}
+
 	fmt.Printf("backup_path=%s changed_count=%d\n", resp.GetBackupPath(), resp.GetChangedCount())
+
 	return 0
 }
 
@@ -294,6 +342,7 @@ func runConfigXPathDelete(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config xpath delete EXPR")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config xpath delete", err)
@@ -304,7 +353,9 @@ func runConfigXPathDelete(args []string) int {
 	if err != nil {
 		return printAndExit("config xpath delete", err)
 	}
+
 	fmt.Printf("backup_path=%s deleted_count=%d\n", resp.GetBackupPath(), resp.GetDeletedCount())
+
 	return 0
 }
 
@@ -313,6 +364,7 @@ func runConfigStripGatewayV6(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config strip-gateway-v6 NAME")
 		return 2
 	}
+
 	// The RPC predates the per-gateway arg; the daemon strips any v6
 	// default gateway. The NAME positional is accepted for symmetry with
 	// inject-gateway-v6 but is not yet wired into the wire schema.
@@ -327,7 +379,9 @@ func runConfigStripGatewayV6(args []string) int {
 	if err != nil {
 		return printAndExit("config strip-gateway-v6", err)
 	}
+
 	fmt.Printf("backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
+
 	return 0
 }
 
@@ -336,16 +390,22 @@ func runConfigInjectGatewayV6(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense config inject-gateway-v6 NAME")
 		return 2
 	}
+
 	cli, ctx, cancel, err := dialProbe()
 	if err != nil {
 		return printAndExit("config inject-gateway-v6", err)
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().InjectGatewayV6(ctx, &mwanv1.InjectGatewayV6Request{GatewayName: args[0]})
+	resp, err := cli.RPC().InjectGatewayV6(
+		ctx,
+		&mwanv1.InjectGatewayV6Request{GatewayName: args[0]},
+	)
 	if err != nil {
 		return printAndExit("config inject-gateway-v6", err)
 	}
+
 	fmt.Printf("backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
+
 	return 0
 }

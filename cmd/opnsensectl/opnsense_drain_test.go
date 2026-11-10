@@ -26,6 +26,7 @@ func socketPair(t *testing.T) (net.Conn, net.Conn) {
 	if err != nil {
 		t.Fatalf("socketpair: %v", err)
 	}
+
 	mk := func(fd int) net.Conn {
 		f := os.NewFile(uintptr(fd), "sockpair")
 		c, err := net.FileConn(f)
@@ -33,8 +34,10 @@ func socketPair(t *testing.T) (net.Conn, net.Conn) {
 		if err != nil {
 			t.Fatalf("FileConn: %v", err)
 		}
+
 		return c
 	}
+
 	return mk(fds[0]), mk(fds[1])
 }
 
@@ -53,6 +56,7 @@ func readN(t *testing.T, c net.Conn, n int) string {
 	if _, err := io.ReadFull(c, buf); err != nil {
 		t.Fatalf("read: %v", err)
 	}
+
 	return string(buf)
 }
 
@@ -113,6 +117,7 @@ func TestClientChurn(t *testing.T) {
 	if got := readN(t, c2Remote, 5); got != "world" {
 		t.Fatalf("client 2 got %q, want world", got)
 	}
+
 	_ = c1Remote.Close()
 	_ = c2Remote.Close()
 }
@@ -138,6 +143,7 @@ func TestClientToChardev(t *testing.T) {
 	if got := readN(t, chRemote, 4); got != "ping" {
 		t.Fatalf("chardev got %q, want ping", got)
 	}
+
 	_ = cRemote.Close()
 }
 
@@ -150,6 +156,7 @@ func TestNotifyWithFD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen notify socket: %v", err)
 	}
+
 	defer func() { _ = rconn.Close() }()
 	t.Setenv("NOTIFY_SOCKET", sockPath)
 
@@ -158,6 +165,7 @@ func TestNotifyWithFD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("socketpair: %v", err)
 	}
+
 	sendFD := fds[0]
 	verify := os.NewFile(uintptr(fds[1]), "verify")
 	defer func() { _ = verify.Close() }()
@@ -166,6 +174,7 @@ func TestNotifyWithFD(t *testing.T) {
 	if err := notifyWithFD(context.Background(), testLog(), state, sendFD); err != nil {
 		t.Fatalf("notifyWithFD: %v", err)
 	}
+
 	_ = syscall.Close(sendFD)
 
 	buf := make([]byte, 256)
@@ -175,17 +184,21 @@ func TestNotifyWithFD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadMsgUnix: %v", err)
 	}
+
 	if string(buf[:n]) != state {
 		t.Fatalf("payload %q, want %q", buf[:n], state)
 	}
+
 	scms, err := syscall.ParseSocketControlMessage(oob[:oobn])
 	if err != nil {
 		t.Fatalf("ParseSocketControlMessage: %v", err)
 	}
+
 	recvFDs, err := syscall.ParseUnixRights(&scms[0])
 	if err != nil || len(recvFDs) != 1 {
 		t.Fatalf("ParseUnixRights: fds=%v err=%v", recvFDs, err)
 	}
+
 	recv := os.NewFile(uintptr(recvFDs[0]), "recv")
 	defer func() { _ = recv.Close() }()
 
@@ -193,10 +206,12 @@ func TestNotifyWithFD(t *testing.T) {
 	if _, err := recv.Write([]byte("ok")); err != nil {
 		t.Fatalf("write through received fd: %v", err)
 	}
+
 	got := make([]byte, 2)
 	if _, err := io.ReadFull(verify, got); err != nil {
 		t.Fatalf("read from verify end: %v", err)
 	}
+
 	if string(got) != "ok" {
 		t.Fatalf("got %q through received fd, want ok", got)
 	}
@@ -225,6 +240,7 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen chardev: %v", err)
 	}
+
 	defer func() { _ = chardevLn.Close() }()
 	guestCh := make(chan net.Conn, 1)
 	go func() {
@@ -259,12 +275,14 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("drainer never connected to the chardev")
 	}
+
 	defer func() { _ = guest.Close() }()
 
 	bridge, err := net.Dial("unix", relayPath)
 	if err != nil {
 		t.Fatalf("bridge dial: %v", err)
 	}
+
 	defer func() { _ = bridge.Close() }()
 
 	// Sync the bridge end to end (bridge -> chardev) so the client is wired,
@@ -273,6 +291,7 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	if got := readN(t, guest, 4); got != "syn1" {
 		t.Fatalf("guest got %q from bridge, want syn1", got)
 	}
+
 	writeAll(t, guest, []byte("from-guest"))
 	if got := readN(t, bridge, 10); got != "from-guest" {
 		t.Fatalf("bridge got %q from guest, want from-guest", got)
@@ -296,6 +315,7 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	case <-time.After(6 * time.Second):
 		t.Fatal("guest write did not complete after bridge drop: wedge not prevented")
 	}
+
 	_ = guest.SetWriteDeadline(time.Time{})
 
 	// Reconnect: a fresh bridge attaches and traffic flows again. Sync first so
@@ -304,19 +324,23 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bridge2 dial: %v", err)
 	}
+
 	defer func() { _ = bridge2.Close() }()
 	writeAll(t, bridge2, []byte("syn2"))
 	if got := readN(t, guest, 4); got != "syn2" {
 		t.Fatalf("guest got %q from bridge2, want syn2", got)
 	}
+
 	// Drain any leftover queued bytes toward bridge2, then assert a fresh write.
 	_ = bridge2.SetReadDeadline(time.Now().Add(time.Second))
 	drainLeft := make([]byte, 1<<20)
+
 	for {
 		if _, err := bridge2.Read(drainLeft); err != nil {
 			break
 		}
 	}
+
 	writeAll(t, guest, []byte("again!"))
 	if got := readN(t, bridge2, 6); got != "again!" {
 		t.Fatalf("bridge2 got %q from guest, want again!", got)
@@ -395,9 +419,14 @@ func TestFreshDialAfterStoreIsFlagged(t *testing.T) {
 
 	dialCount := 0
 	conns := []net.Conn{c1a, c2a}
-	fakeAcquire := func(_ context.Context, _ *slog.Logger, _ map[string][]*os.File, _ string) (net.Conn, bool, error) {
+	fakeAcquire := func(_ context.Context, _ *slog.Logger, _ map[string][]*os.File, _ string) (
+		net.Conn,
+		bool,
+		error,
+	) {
 		conn := conns[dialCount]
 		dialCount++
+
 		return conn, false, nil // always fresh dial, never adopt
 	}
 
@@ -408,6 +437,7 @@ func TestFreshDialAfterStoreIsFlagged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opener call 1: %v", err)
 	}
+
 	defer func() { _ = conn1.Close() }()
 
 	const wantMsg = "fresh chardev dial while a stored fd was expected"
@@ -421,6 +451,7 @@ func TestFreshDialAfterStoreIsFlagged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opener call 2: %v", err)
 	}
+
 	defer func() { _ = conn2.Close() }()
 
 	if !strings.Contains(buf.String(), wantMsg) {
@@ -480,21 +511,31 @@ func TestAcquireListenerNoUnlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("socket: %v", err)
 	}
+
 	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: path}); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
+
 	if err := syscall.Listen(fd, 5); err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+
 	f := os.NewFile(uintptr(fd), path)
 
-	ln, err := acquireListener(context.Background(), testLog(), map[string][]*os.File{"relay": {f}}, "")
+	ln, err := acquireListener(
+		context.Background(),
+		testLog(),
+		map[string][]*os.File{"relay": {f}},
+		"",
+	)
 	if err != nil {
 		t.Fatalf("acquireListener: %v", err)
 	}
+
 	if err := ln.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
+
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("socket path was unlinked on Close: %v", err)
 	}

@@ -183,6 +183,7 @@ func Load() (*Config, error) {
 	if override != "" {
 		return loadFile(override)
 	}
+
 	return loadFirstPresent(DefaultPath, LegacyPath)
 }
 
@@ -194,18 +195,27 @@ func loadFirstPresent(primary, legacy string) (*Config, error) {
 	if primaryErr == nil {
 		return cfg, nil
 	}
+
 	if !errors.Is(primaryErr, fs.ErrNotExist) {
 		return nil, primaryErr
 	}
-	slog.Warn("opnsense config: file absent, reading the gateway config instead",
-		"path", primary, "legacy_path", legacy)
+
+	slog.Warn(
+		"opnsense config: file absent, reading the gateway config instead",
+		"path",
+		primary,
+		"legacy_path",
+		legacy,
+	)
 	cfg, legacyErr := loadFile(legacy)
 	if legacyErr == nil {
 		return cfg, nil
 	}
+
 	if errors.Is(legacyErr, fs.ErrNotExist) {
 		return nil, primaryErr
 	}
+
 	return nil, legacyErr
 }
 
@@ -219,12 +229,15 @@ func LoadFile(path string) (*Config, error) {
 		slog.Error("opnsense config: read failed", "path", path, "err", err)
 		return nil, fmt.Errorf("opnsense config: read %s: %w", path, err)
 	}
+
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		slog.Error("opnsense config: parse failed", "path", path, "err", err)
 		return nil, fmt.Errorf("opnsense config: parse %s: %w", path, err)
 	}
+
 	cfg.Source = path
+
 	return &cfg, nil
 }
 
@@ -237,15 +250,19 @@ func loadFile(path string) (*Config, error) {
 		slog.Error("opnsense config: read failed", "path", path, "err", err)
 		return nil, fmt.Errorf("opnsense config: read %s: %w", path, err)
 	}
+
 	cfg := defaultConfig()
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		slog.Error("opnsense config: parse failed", "path", path, "err", err)
 		return nil, fmt.Errorf("opnsense config: parse %s: %w", path, err)
 	}
+
 	if apiKey := strings.TrimSpace(os.Getenv(SMTP2GOEnv)); apiKey != "" {
 		cfg.Email.SMTP2GOAPIKey = apiKey
 	}
+
 	cfg.Source = path
+
 	return &cfg, nil
 }
 

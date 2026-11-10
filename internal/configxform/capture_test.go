@@ -37,6 +37,7 @@ func transformRealCapture(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("Apply on real capture: %v", err)
 	}
+
 	return out
 }
 
@@ -59,10 +60,12 @@ func TestApplyRealCaptureWithCommittedSubstitutions(t *testing.T) {
 			t.Errorf("%s matched no element", tc.xpath)
 			continue
 		}
+
 		if got := strings.TrimSpace(el.Text()); got != tc.want {
 			t.Errorf("%s = %q, want %q", tc.xpath, got, tc.want)
 		}
 	}
+
 	if strings.Contains(string(out), "test.home.goodkind.io") {
 		t.Error("transformed capture retains the retired test.home.goodkind.io domain")
 	}
@@ -116,6 +119,7 @@ func TestApplyRealCapturePlacesGuestsOnVMNET(t *testing.T) {
 			t.Errorf("%s matched no element", tc.xpath)
 			continue
 		}
+
 		if got := strings.TrimSpace(el.Text()); got != tc.want {
 			t.Errorf("%s = %q, want %q", tc.xpath, got, tc.want)
 		}
@@ -137,10 +141,17 @@ func TestApplyRealCapturePlacesGuestsOnVMNET(t *testing.T) {
 
 	// Any surviving prod literal means a shift was missed.
 	for _, stale := range []string{
-		"3d06:bad:b01:21::", "3d06:bad:b01:22::", "3d06:bad:b01:23::",
-		"3d06:bad:b01:204::", "3d06:bad:b01:200::",
+		"3d06:bad:b01:21::",
+		"3d06:bad:b01:22::",
+		"3d06:bad:b01:23::",
+		"3d06:bad:b01:204::",
+		"3d06:bad:b01:200::",
 		"10.250.250.",
-		"10.250.0.", "10.250.1.", "10.250.2.", "10.250.3.", "10.250.4.",
+		"10.250.0.",
+		"10.250.1.",
+		"10.250.2.",
+		"10.250.3.",
+		"10.250.4.",
 	} {
 		if n := strings.Count(string(out), stale); n != 0 {
 			t.Errorf("stale literal %q appears %d times in the candidate", stale, n)

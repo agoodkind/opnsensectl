@@ -22,11 +22,16 @@ func (c *steppingClock) Now() time.Time {
 	defer c.mu.Unlock()
 	current := c.now
 	c.now = c.now.Add(c.step)
+
 	return current
 }
 
 func testRebootWait() rebootWait {
-	return rebootWait{timeout: DefaultPostRebootTimeout, interval: time.Millisecond, probeTimeout: time.Second}
+	return rebootWait{
+		timeout:      DefaultPostRebootTimeout,
+		interval:     time.Millisecond,
+		probeTimeout: time.Second,
+	}
 }
 
 func newRebootRunner(x *fakeExec) *guestRunner {
@@ -41,12 +46,15 @@ func bootIDProbesAfterShutdown(x *fakeExec) int {
 	if shutdownAt < 0 {
 		return 0
 	}
+
 	count := 0
+
 	for _, argv := range argvs[shutdownAt+1:] {
 		if argv == fakeBootIDArgv {
 			count++
 		}
 	}
+
 	return count
 }
 
@@ -63,18 +71,28 @@ func TestRebootGuestWaitsForBootIDToChange(t *testing.T) {
 	if err := rebootGuest(context.Background(), clk, runner, testRebootWait()); err != nil {
 		t.Fatalf("rebootGuest: %v", err)
 	}
+
 	if x.firmware.bootID == testbedBootID {
 		t.Fatalf("boot id = %s, want the new boot's id", x.firmware.bootID)
 	}
+
 	if probes := bootIDProbesAfterShutdown(x); probes != 7 {
-		t.Fatalf("boot id probes after shutdown = %d, want 7 (3 old boot, 2 unreachable, 1 unseeded, 1 new boot)", probes)
+		t.Fatalf(
+			"boot id probes after shutdown = %d, want 7 (3 old boot, 2 unreachable, 1 unseeded, 1 new boot)",
+			probes,
+		)
 	}
+
 	post, err := captureFirmwareState(context.Background(), runner)
 	if err != nil {
 		t.Fatalf("captureFirmwareState after reboot: %v", err)
 	}
+
 	if post.CoreVersion != "27.1" {
-		t.Fatalf("core version after reboot = %q, want the staged 27.1, not the old boot's state", post.CoreVersion)
+		t.Fatalf(
+			"core version after reboot = %q, want the staged 27.1, not the old boot's state",
+			post.CoreVersion,
+		)
 	}
 }
 
@@ -88,12 +106,15 @@ func TestRebootGuestTimesOutWhenBootIDNeverChanges(t *testing.T) {
 	if err == nil {
 		t.Fatalf("rebootGuest succeeded although the guest never left boot %s", x.firmware.bootID)
 	}
+
 	if !strings.Contains(err.Error(), "did not change") {
 		t.Fatalf("error %q does not report the unchanged boot id", err)
 	}
+
 	if x.firmware.reboots != 1 {
 		t.Fatalf("reboots = %d, want 1", x.firmware.reboots)
 	}
+
 	if probes := bootIDProbesAfterShutdown(x); probes < 2 {
 		t.Fatalf("boot id probes after shutdown = %d, want several before the timeout", probes)
 	}
@@ -108,11 +129,20 @@ func TestRebootGuestDoesNotPassOnClockStepWithoutReboot(t *testing.T) {
 
 	err := rebootGuest(context.Background(), clk, newRebootRunner(x), testRebootWait())
 	if x.firmware.bootSeconds <= testbedBootSeconds {
-		t.Fatalf("kern.boottime = %d, want the clock step to move it past %d", x.firmware.bootSeconds, testbedBootSeconds)
+		t.Fatalf(
+			"kern.boottime = %d, want the clock step to move it past %d",
+			x.firmware.bootSeconds,
+			testbedBootSeconds,
+		)
 	}
+
 	if err == nil {
-		t.Fatalf("rebootGuest passed on the old boot %s after a clock step moved its boot time later", x.firmware.bootID)
+		t.Fatalf(
+			"rebootGuest passed on the old boot %s after a clock step moved its boot time later",
+			x.firmware.bootID,
+		)
 	}
+
 	if !strings.Contains(err.Error(), "did not change") {
 		t.Fatalf("error %q does not report the unchanged boot id", err)
 	}
@@ -127,7 +157,9 @@ func TestExecuteDoesNotRebootWhenBootIDCaptureFails(t *testing.T) {
 	x.firmware.coreAvailable = "26.7.4"
 	x.firmware.updaterAvailable = "26.7.4"
 	x.byArgv[fakeBootIDArgv] = GuestExecResult{
-		ExitCode: 1, Stdout: "", Stderr: "sysctl: kern.boot_id: Device not configured\n",
+		ExitCode: 1,
+		Stdout:   "",
+		Stderr:   "sysctl: kern.boot_id: Device not configured\n",
 	}
 	opts := newOpts(t, "101")
 
@@ -135,12 +167,15 @@ func TestExecuteDoesNotRebootWhenBootIDCaptureFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Execute succeeded although the boot id could not be read")
 	}
+
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
 	}
+
 	if !strings.Contains(err.Error(), "read boot id before reboot") {
 		t.Fatalf("error %q does not name the boot id read", err)
 	}
+
 	if x.firmware.reboots != 0 || slices.Contains(x.argvs(), guestShutdown+" -r +0") {
 		t.Fatalf("rebooted without a boot id to compare: %v", x.argvs())
 	}

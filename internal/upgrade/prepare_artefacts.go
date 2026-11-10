@@ -61,16 +61,24 @@ var errCaptureExecMissing = errors.New("upgrade: capture requires deps.Exec")
 // (config.xml.pre or firmware.pre.json) cannot be written; best-effort
 // artefacts log a warning and write an empty placeholder so the
 // directory shape is always uniform.
-func capturePreUpgradeArtefacts(ctx context.Context, deps Deps, opts Options, deployDir string) error {
+func capturePreUpgradeArtefacts(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	deployDir string,
+) error {
 	if err := captureConfigXML(ctx, deps, opts, deployDir); err != nil {
 		return err
 	}
+
 	if err := captureFirmware(ctx, deps, opts, deployDir); err != nil {
 		return err
 	}
+
 	captureVersion(ctx, deps, opts, deployDir)
 	captureInterfaces(ctx, deps, opts, deployDir)
 	captureBGPStatus(ctx, deps, opts, deployDir)
+
 	return nil
 }
 
@@ -80,35 +88,70 @@ func capturePreUpgradeArtefacts(ctx context.Context, deps Deps, opts Options, de
 // pre-upgrade config bytes, so a failure here aborts Prepare.
 func captureConfigXML(ctx context.Context, deps Deps, opts Options, deployDir string) error {
 	if deps.Exec == nil {
-		slog.ErrorContext(ctx, "upgrade.Prepare: capture config.xml: deps.Exec missing",
-			"err", errCaptureExecMissing)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture config.xml: deps.Exec missing",
+			"err",
+			errCaptureExecMissing,
+		)
+
 		return errCaptureExecMissing
 	}
+
 	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestCat, "/conf/config.xml")
 	if err != nil {
-		slog.ErrorContext(ctx, "upgrade.Prepare: capture config.xml: GuestExec failed",
-			"err", err, "vmid", opts.VMID)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture config.xml: GuestExec failed",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+		)
+
 		return fmt.Errorf("upgrade.Prepare: capture config.xml: %w", err)
 	}
+
 	if res.ExitCode != 0 {
 		err := fmt.Errorf("cat /conf/config.xml exit=%d stderr=%s", res.ExitCode, res.Stderr)
-		slog.ErrorContext(ctx, "upgrade.Prepare: capture config.xml: non-zero exit",
-			"err", err, "vmid", opts.VMID, "exit", res.ExitCode)
+		slog.ErrorContext(
+			ctx,
+			"upgrade.Prepare: capture config.xml: non-zero exit",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+			"exit",
+			res.ExitCode,
+		)
+
 		return fmt.Errorf("upgrade.Prepare: capture config.xml: %w", err)
 	}
+
 	body := []byte(res.Stdout)
 	xmlPath := filepath.Join(deployDir, ArtefactConfigXMLPre)
 	if err := WriteFileBytes(ctx, xmlPath, body); err != nil {
 		return fmt.Errorf("upgrade.Prepare: write config.xml.pre: %w", err)
 	}
+
 	digest := sha256.Sum256(body)
 	line := fmt.Sprintf("%s  %s\n", hex.EncodeToString(digest[:]), ArtefactConfigXMLPre)
 	shaPath := filepath.Join(deployDir, ArtefactConfigXMLSHA256)
 	if err := WriteFileBytes(ctx, shaPath, []byte(line)); err != nil {
 		return fmt.Errorf("upgrade.Prepare: write config.xml.pre.sha256: %w", err)
 	}
-	slog.InfoContext(ctx, "upgrade.Prepare: captured config.xml",
-		"vmid", opts.VMID, "bytes", len(body), "sha256", hex.EncodeToString(digest[:]))
+
+	slog.InfoContext(
+		ctx,
+		"upgrade.Prepare: captured config.xml",
+		"vmid",
+		opts.VMID,
+		"bytes",
+		len(body),
+		"sha256",
+		hex.EncodeToString(digest[:]),
+	)
+
 	return nil
 }
 
@@ -118,26 +161,55 @@ func captureConfigXML(ctx context.Context, deps Deps, opts Options, deployDir st
 func captureVersion(ctx context.Context, deps Deps, opts Options, deployDir string) {
 	path := filepath.Join(deployDir, ArtefactVersion)
 	if deps.Exec == nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture version: deps.Exec missing, writing empty placeholder")
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture version: deps.Exec missing, writing empty placeholder",
+		)
 		_ = WriteFileBytes(ctx, path, nil)
+
 		return
 	}
+
 	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestVersion)
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture version: GuestExec failed, writing empty placeholder",
-			"err", err, "vmid", opts.VMID)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture version: GuestExec failed, writing empty placeholder",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+		)
 		_ = WriteFileBytes(ctx, path, nil)
+
 		return
 	}
+
 	if res.ExitCode != 0 {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture version: non-zero exit, writing empty placeholder",
-			"vmid", opts.VMID, "exit", res.ExitCode, "stderr", res.Stderr)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture version: non-zero exit, writing empty placeholder",
+			"vmid",
+			opts.VMID,
+			"exit",
+			res.ExitCode,
+			"stderr",
+			res.Stderr,
+		)
 		_ = WriteFileBytes(ctx, path, nil)
+
 		return
 	}
+
 	if err := WriteFileBytes(ctx, path, []byte(res.Stdout)); err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture version: write failed",
-			"err", err, "path", path)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture version: write failed",
+			"err",
+			err,
+			"path",
+			path,
+		)
 	}
 }
 
@@ -157,13 +229,34 @@ func captureInterfaces(ctx context.Context, deps Deps, opts Options, deployDir s
 		NetstatV6Err: "",
 	}
 	if deps.Exec == nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture interfaces: deps.Exec missing, writing empty JSON")
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture interfaces: deps.Exec missing, writing empty JSON",
+		)
 		writeInterfacesArtefact(ctx, path, art)
+
 		return
 	}
+
 	art.IfconfigAV, art.IfconfigErr = runCaptureCommand(ctx, deps, opts.VMID, guestIfconfig, "-av")
-	art.NetstatV4, art.NetstatV4Err = runCaptureCommand(ctx, deps, opts.VMID, guestNetstat, "-rn", "-f", "inet")
-	art.NetstatV6, art.NetstatV6Err = runCaptureCommand(ctx, deps, opts.VMID, guestNetstat, "-rn", "-f", "inet6")
+	art.NetstatV4, art.NetstatV4Err = runCaptureCommand(
+		ctx,
+		deps,
+		opts.VMID,
+		guestNetstat,
+		"-rn",
+		"-f",
+		"inet",
+	)
+	art.NetstatV6, art.NetstatV6Err = runCaptureCommand(
+		ctx,
+		deps,
+		opts.VMID,
+		guestNetstat,
+		"-rn",
+		"-f",
+		"inet6",
+	)
 	writeInterfacesArtefact(ctx, path, art)
 }
 
@@ -175,39 +268,75 @@ func captureBGPStatus(ctx context.Context, deps Deps, opts Options, deployDir st
 	path := filepath.Join(deployDir, ArtefactBGPStatus)
 	if deps.Exec == nil {
 		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: deps.Exec missing")
-		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
-			Captured: false,
-			Raw:      "",
-			Reason:   "deps.Exec not configured",
-		})
+		writeBGPStatusArtefact(
+			ctx,
+			path,
+			bgpStatusArtefact{
+				Captured: false,
+				Raw:      "",
+				Reason:   "deps.Exec not configured",
+			},
+		)
+
 		return
 	}
+
 	res, err := deps.Exec.GuestExec(ctx, opts.VMID, guestVtysh, "-c", "show bgp summary json")
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: GuestExec failed",
-			"err", err, "vmid", opts.VMID)
-		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
-			Captured: false,
-			Raw:      "",
-			Reason:   "GuestExec error: " + err.Error(),
-		})
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture bgp_status: GuestExec failed",
+			"err",
+			err,
+			"vmid",
+			opts.VMID,
+		)
+		writeBGPStatusArtefact(
+			ctx,
+			path,
+			bgpStatusArtefact{
+				Captured: false,
+				Raw:      "",
+				Reason:   "GuestExec error: " + err.Error(),
+			},
+		)
+
 		return
 	}
+
 	if res.ExitCode != 0 {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: non-zero exit",
-			"vmid", opts.VMID, "exit", res.ExitCode, "stderr", res.Stderr)
-		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
-			Captured: false,
-			Raw:      "",
-			Reason:   fmt.Sprintf("vtysh exit=%d stderr=%s", res.ExitCode, res.Stderr),
-		})
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture bgp_status: non-zero exit",
+			"vmid",
+			opts.VMID,
+			"exit",
+			res.ExitCode,
+			"stderr",
+			res.Stderr,
+		)
+		writeBGPStatusArtefact(
+			ctx,
+			path,
+			bgpStatusArtefact{
+				Captured: false,
+				Raw:      "",
+				Reason:   fmt.Sprintf("vtysh exit=%d stderr=%s", res.ExitCode, res.Stderr),
+			},
+		)
+
 		return
 	}
-	writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
-		Captured: true,
-		Raw:      res.Stdout,
-		Reason:   "",
-	})
+
+	writeBGPStatusArtefact(
+		ctx,
+		path,
+		bgpStatusArtefact{
+			Captured: true,
+			Raw:      res.Stdout,
+			Reason:   "",
+		},
+	)
 }
 
 // writeBGPStatusArtefact marshals the bgp status artefact and writes
@@ -217,13 +346,27 @@ func captureBGPStatus(ctx context.Context, deps Deps, opts Options, deployDir st
 func writeBGPStatusArtefact(ctx context.Context, path string, art bgpStatusArtefact) {
 	body, err := json.MarshalIndent(art, "", "  ")
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: marshal bgp_status artefact failed",
-			"err", err, "path", path)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: marshal bgp_status artefact failed",
+			"err",
+			err,
+			"path",
+			path,
+		)
+
 		return
 	}
+
 	if err := WriteFileBytes(ctx, path, body); err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: write bgp_status artefact failed",
-			"err", err, "path", path)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: write bgp_status artefact failed",
+			"err",
+			err,
+			"path",
+			path,
+		)
 	}
 }
 
@@ -231,19 +374,44 @@ func writeBGPStatusArtefact(ctx context.Context, path string, art bgpStatusArtef
 // plus a string-shaped error description for inclusion in the JSON
 // artefact. Returning a string keeps the JSON serialisation simple and
 // avoids embedding Go error types in operator-facing artefacts.
-func runCaptureCommand(ctx context.Context, deps Deps, vmid string, args ...string) (string, string) {
+func runCaptureCommand(
+	ctx context.Context,
+	deps Deps,
+	vmid string,
+	args ...string,
+) (string, string) {
 	res, err := deps.Exec.GuestExec(ctx, vmid, args...)
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture command failed",
-			"err", err, "vmid", vmid, "argv", args)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture command failed",
+			"err",
+			err,
+			"vmid",
+			vmid,
+			"argv",
+			args,
+		)
+
 		return "", err.Error()
 	}
+
 	if res.ExitCode != 0 {
 		errMsg := fmt.Sprintf("exit=%d stderr=%s", res.ExitCode, res.Stderr)
-		slog.WarnContext(ctx, "upgrade.Prepare: capture command non-zero exit",
-			"vmid", vmid, "argv", args, "exit", res.ExitCode)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: capture command non-zero exit",
+			"vmid",
+			vmid,
+			"argv",
+			args,
+			"exit",
+			res.ExitCode,
+		)
+
 		return res.Stdout, errMsg
 	}
+
 	return res.Stdout, ""
 }
 
@@ -254,13 +422,27 @@ func runCaptureCommand(ctx context.Context, deps Deps, vmid string, args ...stri
 func writeInterfacesArtefact(ctx context.Context, path string, art interfacesArtefact) {
 	body, err := json.MarshalIndent(art, "", "  ")
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: marshal interfaces artefact failed",
-			"err", err, "path", path)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: marshal interfaces artefact failed",
+			"err",
+			err,
+			"path",
+			path,
+		)
 		_ = WriteFileBytes(ctx, path, nil)
+
 		return
 	}
+
 	if err := WriteFileBytes(ctx, path, body); err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: write interfaces artefact failed",
-			"err", err, "path", path)
+		slog.WarnContext(
+			ctx,
+			"upgrade.Prepare: write interfaces artefact failed",
+			"err",
+			err,
+			"path",
+			path,
+		)
 	}
 }

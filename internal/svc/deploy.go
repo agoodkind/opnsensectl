@@ -63,21 +63,27 @@ func NewDeployManager(log *slog.Logger, cfg DeployConfig) *DeployManager {
 	if cfg.BinaryDir == "" {
 		cfg.BinaryDir = DefaultBinaryDir
 	}
+
 	if cfg.StatePath == "" {
 		cfg.StatePath = DeployStatePath
 	}
+
 	if cfg.PendingPath == "" {
 		cfg.PendingPath = PendingVerifyPath
 	}
+
 	if cfg.WriteStateFile == nil {
 		cfg.WriteStateFile = atomicWriteFile
 	}
+
 	if cfg.NowFn == nil {
 		cfg.NowFn = time.Now
 	}
+
 	if log == nil {
 		log = slog.Default()
 	}
+
 	return &DeployManager{cfg: cfg, log: log, mu: sync.Mutex{}}
 }
 
@@ -119,25 +125,32 @@ func (d *DeployManager) CleanStaleTemps(ctx context.Context) (int, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
+
 		return 0, fmt.Errorf("clean stale temps: read %s: %w", d.cfg.BinaryDir, err)
 	}
+
 	removed := 0
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
+
 		name := entry.Name()
 		if !isStaleDeployTemp(name) {
 			continue
 		}
+
 		path := filepath.Join(d.cfg.BinaryDir, name)
 		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			d.log.WarnContext(ctx, "deploy: clean stale temp failed", "path", path, "err", rmErr)
 			continue
 		}
+
 		d.log.DebugContext(ctx, "deploy: removed orphaned deploy temp", "path", path)
 		removed++
 	}
+
 	return removed, nil
 }
 
@@ -149,6 +162,7 @@ func isStaleDeployTemp(name string) bool {
 	if name == BinaryStaged || name == BinaryStagedTmp {
 		return true
 	}
+
 	return strings.HasPrefix(name, ".") && strings.Contains(name, ".upload.")
 }
 
@@ -160,47 +174,45 @@ func isStaleDeployTemp(name string) bool {
 // any error before the rename, srcPath is left in place so the caller
 // can decide whether to remove or inspect it. On success, srcPath has
 // been consumed (renamed into the staged slot).
-func (d *DeployManager) DeployFromPath(ctx context.Context, srcPath, sha256Hex, versionStr string) (previousPath string, stagedSHA256 string, err error) {
+func (d *DeployManager) DeployFromPath(
+	ctx context.Context,
+	srcPath string,
+	sha256Hex string,
+	versionStr string,
+) (previousPath string, stagedSHA256 string, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.log.InfoContext(ctx, "deploy: begin from path",
-		"src", srcPath,
-		"sha256_hex", sha256Hex,
-		"version", versionStr)
+	d.log.InfoContext(
+		ctx,
+		"deploy: begin from path",
+		"src",
+		srcPath,
+		"sha256_hex",
+		sha256Hex,
+		"version",
+		versionStr,
+	)
 
 	if srcPath == "" {
 		err = errors.New("deploy: empty src path")
 		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+
 		return "", "", err
 	}
+
 	if sha256Hex == "" {
 		err = errors.New("deploy: sha256_hex required")
 		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+
 		return "", "", err
 	}
 
-	info, statErr := os.Stat(srcPath)
-	if statErr != nil {
-		d.log.ErrorContext(ctx, "deploy: stat src failed", "err", statErr, "path", srcPath)
-		return "", "", fmt.Errorf("stat src %s: %w", srcPath, statErr)
-	}
-	if info.Size() == 0 {
-		err = errors.New("deploy: empty binary payload")
-		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
-		return "", "", err
+	computedHex, verifyErr := d.verifyDeploySource(ctx, srcPath, sha256Hex)
+	if verifyErr != nil {
+		return "", "", verifyErr
 	}
 
-	computedHex, hashErr := fileSHA256(srcPath)
-	if hashErr != nil {
-		d.log.ErrorContext(ctx, "deploy: hash src failed", "err", hashErr)
-		return "", "", fmt.Errorf("hash src: %w", hashErr)
-	}
-	if !strings.EqualFold(computedHex, sha256Hex) {
-		err = fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
-		d.log.ErrorContext(ctx, "deploy: sha256 mismatch", "err", err, "got", computedHex, "want", sha256Hex)
-		return "", "", err
-	}
 	stagedSHA256 = computedHex
 
 	staged := d.pathOf(BinaryStaged)
@@ -209,43 +221,77 @@ func (d *DeployManager) DeployFromPath(ctx context.Context, srcPath, sha256Hex, 
 	previousPath = previous
 
 	if renameErr := os.Rename(srcPath, staged); renameErr != nil {
-		d.log.ErrorContext(ctx, "deploy: stage rename failed", "err", renameErr, "from", srcPath, "to", staged)
+		d.log.ErrorContext(
+			ctx,
+			"deploy: stage rename failed",
+			"err",
+			renameErr,
+			"from",
+			srcPath,
+			"to",
+			staged,
+		)
+
 		return "", "", fmt.Errorf("stage rename: %w", renameErr)
 	}
+
 	if chmodErr := os.Chmod(staged, BinaryFileMode); chmodErr != nil {
 		d.log.ErrorContext(ctx, "deploy: stage chmod failed", "err", chmodErr, "path", staged)
 		_ = os.Remove(staged)
+
 		return "", "", fmt.Errorf("chmod staged: %w", chmodErr)
 	}
 
 	if err := d.finishSwap(ctx, staged, current, previous, versionStr, computedHex); err != nil {
 		return "", "", err
 	}
+
 	return previousPath, stagedSHA256, nil
 }
 
 // finishSwap performs the .current<->.previous swap, state-file
 // update, pending-verify marker drop, and re-exec arming for
 // DeployFromPath.
-func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previous, versionStr, computedHex string) error {
+func (d *DeployManager) finishSwap(
+	ctx context.Context,
+	staged string,
+	current string,
+	previous string,
+	versionStr string,
+	computedHex string,
+) error {
 	if _, statErr := os.Stat(current); statErr == nil {
 		if copyErr := copyFile(current, previous); copyErr != nil {
 			d.log.ErrorContext(ctx, "deploy: copy current to previous failed", "err", copyErr)
 			_ = os.Remove(staged)
+
 			return fmt.Errorf("copy current to previous: %w", copyErr)
 		}
+
 		d.log.InfoContext(ctx, "deploy: previous slot updated", "path", previous)
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		d.log.ErrorContext(ctx, "deploy: stat current failed", "err", statErr, "path", current)
 		_ = os.Remove(staged)
+
 		return fmt.Errorf("stat current: %w", statErr)
 	}
 
 	if err := os.Rename(staged, current); err != nil {
-		d.log.ErrorContext(ctx, "deploy: current swap failed", "err", err, "from", staged, "to", current)
+		d.log.ErrorContext(
+			ctx,
+			"deploy: current swap failed",
+			"err",
+			err,
+			"from",
+			staged,
+			"to",
+			current,
+		)
 		_ = os.Remove(staged)
+
 		return fmt.Errorf("rename staged to current: %w", err)
 	}
+
 	d.log.InfoContext(ctx, "deploy: current binary swapped", "path", current, "sha256", computedHex)
 
 	previousSHA, _ := fileSHA256(previous)
@@ -259,18 +305,24 @@ func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previou
 		d.log.ErrorContext(ctx, "deploy: write state failed", "err", writeErr)
 	}
 
-	if writeErr := d.cfg.WriteStateFile(d.cfg.PendingPath, []byte(MarkerFreshDeploy+"\n"), PendingFileMode); writeErr != nil {
+	if writeErr := d.cfg.WriteStateFile(
+		d.cfg.PendingPath,
+		[]byte(MarkerFreshDeploy+"\n"),
+		PendingFileMode,
+	); writeErr != nil {
 		d.log.ErrorContext(ctx, "deploy: write pending marker failed", "err", writeErr)
 	}
 
-	d.log.InfoContext(ctx, "deploy: staged binary swapped into active slot",
-		"sha256", computedHex)
+	d.log.InfoContext(ctx, "deploy: staged binary swapped into active slot", "sha256", computedHex)
+
 	return nil
 }
 
 // MarkHealthy clears the pending-verify marker and stamps health=ok.
 // Called from the DeployStatus RPC handler on MARK_HEALTHY.
-func (d *DeployManager) MarkHealthy(ctx context.Context) (active, previous string, deployedAt int64, err error) {
+func (d *DeployManager) MarkHealthy(
+	ctx context.Context,
+) (active, previous string, deployedAt int64, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -281,16 +333,19 @@ func (d *DeployManager) MarkHealthy(ctx context.Context) (active, previous strin
 		d.log.ErrorContext(ctx, "deploy: read state failed", "err", err)
 		return "", "", 0, fmt.Errorf("read state: %w", err)
 	}
+
 	state.Health = HealthOK
 	if state.Active == "" {
 		// State file missing or stale: derive from disk.
 		current, _ := d.CurrentSHA256()
 		state.Active = current
 	}
+
 	if state.Previous == "" {
 		prev, _ := d.PreviousSHA256()
 		state.Previous = prev
 	}
+
 	if state.DeployedAt == 0 {
 		state.DeployedAt = d.cfg.NowFn().Unix()
 	}
@@ -299,34 +354,51 @@ func (d *DeployManager) MarkHealthy(ctx context.Context) (active, previous strin
 		d.log.ErrorContext(ctx, "deploy: write state failed", "err", err)
 		return "", "", 0, fmt.Errorf("write state: %w", err)
 	}
+
 	if err := os.Remove(d.cfg.PendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		d.log.ErrorContext(ctx, "deploy: remove pending marker failed", "err", err, "path", d.cfg.PendingPath)
+		d.log.ErrorContext(
+			ctx,
+			"deploy: remove pending marker failed",
+			"err",
+			err,
+			"path",
+			d.cfg.PendingPath,
+		)
+
 		return "", "", 0, fmt.Errorf("remove pending marker: %w", err)
 	}
+
 	d.log.InfoContext(ctx, "deploy: healthy", "active", state.Active, "previous", state.Previous)
+
 	return state.Active, state.Previous, state.DeployedAt, nil
 }
 
 // Status returns the current deploy state for the DeployStatus RPC.
 // Returns derived state if the state file is absent.
-func (d *DeployManager) Status(ctx context.Context) (active, previous, health string, deployedAt int64, err error) {
+func (d *DeployManager) Status(
+	ctx context.Context,
+) (active, previous, health string, deployedAt int64, err error) {
 	state, readErr := d.readStateLocked()
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		d.log.ErrorContext(ctx, "deploy: status read state failed", "err", readErr)
 		return "", "", "", 0, fmt.Errorf("read state: %w", readErr)
 	}
+
 	// Always reconcile against on-disk reality.
 	current, _ := d.CurrentSHA256()
 	prev, _ := d.PreviousSHA256()
 	if state.Active == "" {
 		state.Active = current
 	}
+
 	if state.Previous == "" {
 		state.Previous = prev
 	}
+
 	if state.Health == "" {
 		state.Health = HealthPending
 	}
+
 	return state.Active, state.Previous, state.Health, state.DeployedAt, nil
 }
 
@@ -368,11 +440,16 @@ func (d *DeployManager) Revert(ctx context.Context) (revertedTo string, err erro
 		// not fatal
 	}
 
-	if writeErr := d.cfg.WriteStateFile(d.cfg.PendingPath, []byte(MarkerFreshDeploy+"\n"), PendingFileMode); writeErr != nil {
+	if writeErr := d.cfg.WriteStateFile(
+		d.cfg.PendingPath,
+		[]byte(MarkerFreshDeploy+"\n"),
+		PendingFileMode,
+	); writeErr != nil {
 		d.log.ErrorContext(ctx, "revert: write pending marker failed", "err", writeErr)
 	}
 
 	d.log.InfoContext(ctx, "revert: completed", "reverted_to_sha256", revertedTo)
+
 	return revertedTo, nil
 }
 
@@ -400,8 +477,10 @@ func (d *DeployManager) readStateLocked() (deployState, error) {
 		if !errors.Is(err, os.ErrNotExist) {
 			d.log.Error("readStateLocked: read failed", "path", d.cfg.StatePath, "err", err)
 		}
+
 		return deployState{}, fmt.Errorf("read state file %s: %w", d.cfg.StatePath, err)
 	}
+
 	return parseStateFile(string(data)), nil
 }
 
@@ -441,6 +520,7 @@ func encodeStateFile(s deployState) string {
 	b.WriteByte(':')
 	b.WriteString(s.Health)
 	b.WriteByte('\n')
+
 	return b.String()
 }
 
@@ -448,15 +528,18 @@ func encodeStateFile(s deployState) string {
 // keys are ignored. Missing keys yield zero values.
 func parseStateFile(content string) deployState {
 	var s deployState
+
 	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+
 		idx := strings.IndexByte(line, ':')
 		if idx <= 0 {
 			continue
 		}
+
 		key := stateKey(line[:idx])
 		val := line[idx+1:]
 		switch key {
@@ -475,6 +558,7 @@ func parseStateFile(content string) deployState {
 			s.Health = val
 		}
 	}
+
 	return s
 }
 
@@ -487,28 +571,37 @@ func atomicWriteFile(path string, content []byte, mode os.FileMode) error {
 		slog.Error("atomicWriteFile: open failed", "path", tmp, "err", err)
 		return fmt.Errorf("open %s: %w", tmp, err)
 	}
+
 	if _, writeErr := file.Write(content); writeErr != nil {
 		_ = file.Close()
 		_ = os.Remove(tmp)
 		slog.Error("atomicWriteFile: write failed", "path", tmp, "err", writeErr)
+
 		return fmt.Errorf("write %s: %w", tmp, writeErr)
 	}
+
 	if syncErr := file.Sync(); syncErr != nil {
 		_ = file.Close()
 		_ = os.Remove(tmp)
 		slog.Error("atomicWriteFile: sync failed", "path", tmp, "err", syncErr)
+
 		return fmt.Errorf("sync %s: %w", tmp, syncErr)
 	}
+
 	if closeErr := file.Close(); closeErr != nil {
 		_ = os.Remove(tmp)
 		slog.Error("atomicWriteFile: close failed", "path", tmp, "err", closeErr)
+
 		return fmt.Errorf("close %s: %w", tmp, closeErr)
 	}
+
 	if renameErr := os.Rename(tmp, path); renameErr != nil {
 		_ = os.Remove(tmp)
 		slog.Error("atomicWriteFile: rename failed", "from", tmp, "to", path, "err", renameErr)
+
 		return fmt.Errorf("rename %s into %s: %w", tmp, path, renameErr)
 	}
+
 	return nil
 }
 
@@ -518,6 +611,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
+
 	defer func() { _ = source.Close() }()
 
 	tmp := dst + ".tmp"
@@ -525,26 +619,35 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", tmp, err)
 	}
+
 	if _, copyErr := io.Copy(target, source); copyErr != nil {
 		_ = target.Close()
 		_ = os.Remove(tmp)
+
 		return fmt.Errorf("copy: %w", copyErr)
 	}
+
 	if syncErr := target.Sync(); syncErr != nil {
 		_ = target.Close()
 		_ = os.Remove(tmp)
+
 		return fmt.Errorf("sync %s: %w", tmp, syncErr)
 	}
+
 	if closeErr := target.Close(); closeErr != nil {
 		_ = os.Remove(tmp)
 		slog.Error("copyFile: close target failed", "path", tmp, "err", closeErr)
+
 		return fmt.Errorf("close %s: %w", tmp, closeErr)
 	}
+
 	if renameErr := os.Rename(tmp, dst); renameErr != nil {
 		_ = os.Remove(tmp)
 		slog.Error("copyFile: rename failed", "from", tmp, "to", dst, "err", renameErr)
+
 		return fmt.Errorf("rename %s into %s: %w", tmp, dst, renameErr)
 	}
+
 	return nil
 }
 
@@ -556,9 +659,12 @@ func fileSHA256(path string) (string, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil
 		}
+
 		slog.Error("fileSHA256: open failed", "path", path, "err", err)
+
 		return "", fmt.Errorf("open %s: %w", path, err)
 	}
+
 	defer func() { _ = file.Close() }()
 
 	hasher := sha256.New()
@@ -566,5 +672,49 @@ func fileSHA256(path string) (string, error) {
 		slog.Error("fileSHA256: hash failed", "path", path, "err", copyErr)
 		return "", fmt.Errorf("hash %s: %w", path, copyErr)
 	}
+
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (d *DeployManager) verifyDeploySource(
+	ctx context.Context,
+	srcPath string,
+	sha256Hex string,
+) (string, error) {
+	info, statErr := os.Stat(srcPath)
+	if statErr != nil {
+		d.log.ErrorContext(ctx, "deploy: stat src failed", "err", statErr, "path", srcPath)
+		return "", fmt.Errorf("stat src %s: %w", srcPath, statErr)
+	}
+
+	if info.Size() == 0 {
+		err := errors.New("deploy: empty binary payload")
+		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+
+		return "", err
+	}
+
+	computedHex, hashErr := fileSHA256(srcPath)
+	if hashErr != nil {
+		d.log.ErrorContext(ctx, "deploy: hash src failed", "err", hashErr)
+		return "", fmt.Errorf("hash src: %w", hashErr)
+	}
+
+	if !strings.EqualFold(computedHex, sha256Hex) {
+		err := fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
+		d.log.ErrorContext(
+			ctx,
+			"deploy: sha256 mismatch",
+			"err",
+			err,
+			"got",
+			computedHex,
+			"want",
+			sha256Hex,
+		)
+
+		return "", err
+	}
+
+	return computedHex, nil
 }
