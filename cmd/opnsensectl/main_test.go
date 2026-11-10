@@ -381,6 +381,7 @@ func TestHostServeWithValidConfigServesTheProbeSocket(t *testing.T) {
 		"the probe socket "+listen,
 		func() bool {
 			info, err := os.Stat(listen)
+
 			return err == nil && info.Mode()&os.ModeSocket != 0 &&
 				info.Mode().Perm() == socketFileMode
 		},

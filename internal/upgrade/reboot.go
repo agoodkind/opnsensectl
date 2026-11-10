@@ -65,6 +65,7 @@ func rebootGuest(ctx context.Context, clk Clock, r *guestRunner, wait rebootWait
 			"vmid",
 			r.vmid,
 		)
+
 		return fmt.Errorf("read boot id before reboot: %w", err)
 	}
 
@@ -86,6 +87,7 @@ func rebootGuest(ctx context.Context, clk Clock, r *guestRunner, wait rebootWait
 			"vmid",
 			r.vmid,
 		)
+
 		return fmt.Errorf("post-reboot wait: %w", err)
 	}
 

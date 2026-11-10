@@ -65,6 +65,7 @@ func (ExecPinger) Ping(ctx context.Context, bin, target string) bool {
 			"target",
 			target,
 		)
+
 		return false
 	}
 
@@ -178,6 +179,7 @@ func (v *HealthValidator) probeEgress(ctx context.Context) (bool, bool, int) {
 				"cycles",
 				cycles,
 			)
+
 			return ipv4OK, ipv6OK, cycles
 		case <-time.After(v.pollInterval):
 		}
@@ -252,6 +254,7 @@ func daemonVersionCheck(ctx context.Context, client DaemonRPCClient, vmid string
 	resp, err := client.Version(callCtx, &mwanv1.VersionRequest{})
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade: daemon version failed", "err", err, "vmid", vmid)
+
 		return CheckResult{
 			Name: checkDaemonVersion,
 			Pass: false,
@@ -293,6 +296,7 @@ func execRoundTripCheck(ctx context.Context, client DaemonRPCClient, vmid string
 	)
 	if err != nil {
 		slog.WarnContext(ctx, "upgrade: exec round trip failed", "err", err, "vmid", vmid)
+
 		return CheckResult{
 			Name: checkExecHostname,
 			Pass: false,

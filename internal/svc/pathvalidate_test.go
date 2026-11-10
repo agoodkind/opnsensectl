@@ -14,6 +14,7 @@ import (
 func newValidatorForTest(t *testing.T, readDirs, writeDirs []string) (*PathValidator, func()) {
 	t.Helper()
 	pv := NewPathValidator(slog.Default(), readDirs, writeDirs)
+
 	return pv, func() { _ = pv.Close() }
 }
 
@@ -23,6 +24,7 @@ func TestPathValidator_AllowedBaseHits(t *testing.T) {
 	if err := os.WriteFile(target, []byte("hi"), 0o600); err != nil {
 		t.Fatalf("write seed: %v", err)
 	}
+
 	pv, cleanup := newValidatorForTest(t, []string{base}, nil)
 	defer cleanup()
 
@@ -30,6 +32,7 @@ func TestPathValidator_AllowedBaseHits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenForRead: %v", err)
 	}
+
 	defer func() { _ = file.Close() }()
 	got := make([]byte, 16)
 	n, _ := file.Read(got)
@@ -44,9 +47,11 @@ func TestPathValidator_PathTraversalRefused(t *testing.T) {
 	if err := os.Mkdir(base, 0o700); err != nil {
 		t.Fatalf("mkdir base: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(parent, "secret.txt"), []byte("nope"), 0o600); err != nil {
 		t.Fatalf("seed secret: %v", err)
 	}
+
 	pv, cleanup := newValidatorForTest(t, []string{base}, nil)
 	defer cleanup()
 
@@ -59,6 +64,7 @@ func TestPathValidator_PathTraversalRefused(t *testing.T) {
 		_ = file.Close()
 		t.Fatalf("expected refusal for traversal path %q", traversal)
 	}
+
 	if errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("traversal target exists, so the error must be a refusal: %v", err)
 	}
@@ -71,10 +77,12 @@ func TestPathValidator_SymlinkRefused(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("nope"), 0o600); err != nil {
 		t.Fatalf("seed secret: %v", err)
 	}
+
 	link := filepath.Join(base, "evil")
 	if err := os.Symlink(secret, link); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
+
 	pv, cleanup := newValidatorForTest(t, []string{base}, nil)
 	defer cleanup()
 
@@ -89,10 +97,12 @@ func TestPathValidator_NoFollowOnFinalComponent(t *testing.T) {
 	if err := os.WriteFile(real, []byte("ok"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+
 	link := filepath.Join(base, "link.txt")
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
+
 	pv, cleanup := newValidatorForTest(t, []string{base}, nil)
 	defer cleanup()
 
@@ -115,6 +125,7 @@ func TestPathValidator_DirectionAllowlists(t *testing.T) {
 	if _, err := pv.OpenForRead(readFile); err != nil {
 		t.Fatalf("read in read allowlist must succeed: %v", err)
 	}
+
 	if _, _, err := pv.ResolveWrite(readFile); err == nil {
 		t.Fatalf("write into read-only allowlist must fail")
 	}
@@ -123,13 +134,16 @@ func TestPathValidator_DirectionAllowlists(t *testing.T) {
 	if _, _, err := pv.ResolveWrite(writeTarget); err != nil {
 		t.Fatalf("write in write allowlist must resolve: %v", err)
 	}
+
 	// Write roots are implicitly readable.
 	if err := os.WriteFile(writeTarget, []byte("w"), 0o600); err != nil {
 		t.Fatalf("seed write file: %v", err)
 	}
+
 	writeFile, err := pv.OpenForRead(writeTarget)
 	if err != nil {
 		t.Fatalf("read in write allowlist must succeed: %v", err)
 	}
+
 	_ = writeFile.Close()
 }

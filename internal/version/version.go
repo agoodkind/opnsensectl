@@ -44,15 +44,18 @@ func binaryHashFrom(path string) string {
 			return unknown
 		}
 	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return unknown
 	}
+
 	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return unknown
 	}
+
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
@@ -84,5 +87,6 @@ func stampedOrUnknown(value string) string {
 	if value == "" {
 		return unknown
 	}
+
 	return value
 }

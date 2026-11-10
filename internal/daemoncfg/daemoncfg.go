@@ -79,6 +79,7 @@ func Load(path string) (*Config, error) {
 	if err := validate(path, &cfg); err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
 
@@ -90,20 +91,26 @@ func validate(path string, cfg *Config) error {
 	if d.SerialPath == "" {
 		return fmt.Errorf("daemoncfg: [daemon] serial_path is required in %s", path)
 	}
+
 	if d.Baud == 0 {
 		return fmt.Errorf("daemoncfg: [daemon] baud is required and must be non-zero in %s", path)
 	}
+
 	if d.ConfigXMLPath == "" {
 		return fmt.Errorf("daemoncfg: [daemon] config_xml_path is required in %s", path)
 	}
+
 	if d.BackupDir == "" {
 		return fmt.Errorf("daemoncfg: [daemon] backup_dir is required in %s", path)
 	}
+
 	if d.Logfile == "" {
 		return fmt.Errorf("daemoncfg: [daemon] logfile is required in %s", path)
 	}
+
 	if d.StateDir == "" {
 		return fmt.Errorf("daemoncfg: [daemon] state_dir is required in %s", path)
 	}
+
 	return nil
 }

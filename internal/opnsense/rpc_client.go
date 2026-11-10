@@ -41,6 +41,7 @@ func DialContext(ctx context.Context, target string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return c, nil
 }
 
@@ -50,6 +51,7 @@ func Dial(target string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return c, nil
 }
 
@@ -57,16 +59,19 @@ func dialUnix(ctx context.Context, target string) (*Client, error) {
 	if target == "" {
 		return nil, errors.New("opnsense: empty target")
 	}
+
 	socketPath, ok := unixTargetPath(target)
 	if !ok {
 		return nil, errors.New("opnsense: only unix:// targets supported")
 	}
+
 	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		var d net.Dialer
 		c, err := d.DialContext(ctx, "unix", socketPath)
 		if err != nil {
 			return nil, logWrap(ctx, slog.Default(), "unix dial "+socketPath, err)
 		}
+
 		return c, nil
 	}
 	conn, err := grpc.NewClient(
@@ -78,6 +83,7 @@ func dialUnix(ctx context.Context, target string) (*Client, error) {
 	if err != nil {
 		return nil, logWrap(ctx, slog.Default(), "grpc.NewClient", err)
 	}
+
 	c := &Client{
 		target:   target,
 		log:      slog.Default(),
@@ -87,6 +93,7 @@ func dialUnix(ctx context.Context, target string) (*Client, error) {
 		mu:       sync.Mutex{},
 		closed:   false,
 	}
+
 	return c, nil
 }
 
@@ -97,10 +104,12 @@ func (c *Client) Close() error {
 	if c.closed {
 		return nil
 	}
+
 	c.closed = true
 	if err := c.conn.Close(); err != nil {
 		return logWrap(context.Background(), c.log, "close", err)
 	}
+
 	return nil
 }
 
@@ -120,9 +129,11 @@ func unixTargetPath(target string) (string, bool) {
 	if !strings.HasPrefix(target, unixScheme) {
 		return "", false
 	}
+
 	path := strings.TrimPrefix(target, unixScheme)
 	if path == "" {
 		return "", false
 	}
+
 	return path, true
 }

@@ -307,6 +307,7 @@ func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 			f.oldBootLeft--
 		case f.unreachableLeft > 0:
 			f.unreachableLeft--
+
 			return GuestExecResult{}, errors.New(
 				"grpc Exec " + args[0] + ": rpc error: code = Unavailable desc = connection refused",
 			)
@@ -525,6 +526,7 @@ func (f *fakeFirmware) boot() {
 func (f *fakeFirmware) readBootID() (GuestExecResult, error) {
 	if f.unseededLeft > 0 {
 		f.unseededLeft--
+
 		return GuestExecResult{
 			ExitCode: 1,
 			Stdout:   "",

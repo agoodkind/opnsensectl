@@ -26,18 +26,23 @@ func buildBody(message string, attrs []slog.Attr) string {
 		if attr.Key == "" {
 			continue
 		}
+
 		values[attr.Key] = attr.Value.String()
 	}
+
 	sections := []string{message}
 	if what := buildWhat(values); what != "" {
 		sections = append(sections, what)
 	}
+
 	if where := buildWhere(values); where != "" {
 		sections = append(sections, where)
 	}
+
 	if extras := buildExtras(values); extras != "" {
 		sections = append(sections, extras)
 	}
+
 	return strings.Join(sections, "\n\n")
 }
 
@@ -46,11 +51,13 @@ func buildWhat(values map[string]string) string {
 	if !ok {
 		return ""
 	}
+
 	delete(values, errKey)
 	mainPart, stderrPart := splitStderr(errValue)
 	if stderrPart == "" {
 		return "What:    " + mainPart
 	}
+
 	return "What:    " + mainPart + "\n         stderr: " + stderrPart
 }
 
@@ -61,6 +68,7 @@ func splitStderr(errValue string) (string, string) {
 	if !ok {
 		return errValue, ""
 	}
+
 	mainPart := strings.TrimRight(strings.TrimSpace(before), "(,: ")
 	rest := strings.TrimSuffix(strings.TrimSpace(after), ")")
 	if strings.HasPrefix(rest, "\"") {
@@ -69,6 +77,7 @@ func splitStderr(errValue string) (string, string) {
 			return mainPart, strings.TrimSpace(rest[1:closing])
 		}
 	}
+
 	return mainPart, rest
 }
 
@@ -77,7 +86,9 @@ func buildWhere(values map[string]string) string {
 	if !ok {
 		return ""
 	}
+
 	delete(values, phaseKey)
+
 	return "Where:   " + phaseKey + "=" + phase
 }
 
@@ -85,14 +96,18 @@ func buildExtras(values map[string]string) string {
 	if len(values) == 0 {
 		return ""
 	}
+
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
+
 	lines := make([]string, 0, len(keys))
 	for _, key := range keys {
 		lines = append(lines, strings.ToUpper(key[:1])+key[1:]+": "+values[key])
 	}
+
 	return strings.Join(lines, "\n")
 }
