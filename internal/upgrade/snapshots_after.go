@@ -23,6 +23,7 @@ func snapshotsAfter(qmOutput []byte, targetSnap string) []string {
 	lines := strings.Split(string(qmOutput), "\n")
 	var result []string
 	past := false
+
 	for _, line := range lines {
 		// qm listsnapshot lines look like: ` `-> snapname   timestamp   desc`
 		// The name is the first non-space/arrow token after whitespace.
@@ -30,25 +31,31 @@ func snapshotsAfter(qmOutput []byte, targetSnap string) []string {
 		if trimmed == "" {
 			continue
 		}
+
 		// Extract just the snapshot name (first field).
 		fields := strings.Fields(trimmed)
 		if len(fields) == 0 {
 			continue
 		}
+
 		name := fields[0]
 		if name == "current" {
 			continue
 		}
+
 		if !past {
 			if name == targetSnap {
 				past = true
 			}
+
 			continue
 		}
+
 		// Only collect watchdog-managed snapshots; never touch user snapshots.
 		if preDeploySnapRE.MatchString(name) || knownGoodSnapRE.MatchString(name) {
 			result = append(result, name)
 		}
 	}
+
 	return result
 }

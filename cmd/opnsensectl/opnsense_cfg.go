@@ -75,6 +75,7 @@ func requireProbeTimeout(cfg *opnsensecfg.Config) (time.Duration, error) {
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		slog.Error("opnsense: parse probe timeout", "err", err, "value", raw)
+
 		return 0, fmt.Errorf(
 			"opnsense: [opnsense.probe].timeout %q is not a Go duration: %w",
 			raw,
@@ -109,6 +110,7 @@ func requireProbeTransferStall(cfg *opnsensecfg.Config) (time.Duration, error) {
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		slog.Error("opnsense: parse probe transfer_stall_timeout", "err", err, "value", raw)
+
 		return 0, fmt.Errorf(
 			"opnsense: [opnsense.probe].transfer_stall_timeout %q is not a Go duration: %w",
 			raw,

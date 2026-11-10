@@ -11,5 +11,6 @@ func clockOrReal(candidate Clock) Clock {
 	if candidate != nil {
 		return candidate
 	}
+
 	return realClock{}
 }

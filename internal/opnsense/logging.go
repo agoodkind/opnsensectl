@@ -14,6 +14,8 @@ func logWrap(ctx context.Context, log *slog.Logger, op string, err error) error 
 	if log == nil {
 		log = slog.Default()
 	}
+
 	log.ErrorContext(ctx, "opnsense: "+op, "err", err)
+
 	return fmt.Errorf("opnsense: %s: %w", op, err)
 }

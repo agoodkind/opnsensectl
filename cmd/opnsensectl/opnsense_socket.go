@@ -23,6 +23,7 @@ func openSocketDir(path string) (*os.Root, string, error) {
 		slog.Error("opnsense: open socket directory", "dir", dir, "err", err)
 		return nil, "", fmt.Errorf("open socket directory %s: %w", dir, err)
 	}
+
 	return root, filepath.Base(path), nil
 }
 
@@ -33,11 +34,13 @@ func removeStaleSocket(path string) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = root.Close() }()
 	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		slog.Error("opnsense: clear stale socket", "path", path, "err", err)
 		return fmt.Errorf("clear stale socket %s: %w", path, err)
 	}
+
 	return nil
 }
 
@@ -47,10 +50,12 @@ func restrictSocket(path string) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = root.Close() }()
 	if err := root.Chmod(name, socketFileMode); err != nil {
 		slog.Error("opnsense: chmod socket", "path", path, "err", err)
 		return fmt.Errorf("chmod %s: %w", path, err)
 	}
+
 	return nil
 }

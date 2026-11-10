@@ -93,11 +93,13 @@ func Load(path string) (Substitutions, error) {
 		slog.Error("configxform: load substitutions read failed", "path", path, "err", err)
 		return Substitutions{}, fmt.Errorf("configxform.Load: read %q: %w", path, err)
 	}
+
 	subs, err := Decode(data)
 	if err != nil {
 		slog.Error("configxform: load substitutions decode failed", "path", path, "err", err)
 		return Substitutions{}, err
 	}
+
 	return subs, nil
 }
 
@@ -108,8 +110,10 @@ func Decode(data []byte) (Substitutions, error) {
 	if len(data) == 0 {
 		err := errors.New("configxform.Decode: empty YAML input")
 		slog.Error("configxform: decode rejected empty input", "err", err)
+
 		return Substitutions{}, err
 	}
+
 	var subs Substitutions
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -117,5 +121,6 @@ func Decode(data []byte) (Substitutions, error) {
 		slog.Error("configxform: decode parse YAML failed", "err", err)
 		return Substitutions{}, fmt.Errorf("configxform.Decode: parse YAML: %w", err)
 	}
+
 	return subs, nil
 }

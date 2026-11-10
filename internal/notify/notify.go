@@ -71,6 +71,7 @@ func NewWithMailer(
 			"service",
 			serviceName,
 		)
+
 		return nil, errLogRequired
 	}
 

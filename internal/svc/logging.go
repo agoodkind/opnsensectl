@@ -11,6 +11,7 @@ func loggerOrDefault(log *slog.Logger) *slog.Logger {
 	if log != nil {
 		return log
 	}
+
 	return slog.Default()
 }
 
@@ -23,10 +24,13 @@ func logWrappedErrorContext(
 	attrs ...slog.Attr,
 ) error {
 	logger := loggerOrDefault(log)
+
 	for _, attr := range attrs {
 		logger = logger.With(attr)
 	}
+
 	logger.ErrorContext(ctx, logMessage, "err", err)
+
 	return fmt.Errorf("%s: %w", wrapMessage, err)
 }
 

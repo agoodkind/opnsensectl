@@ -25,6 +25,7 @@ func (s serialStream) Read(p []byte) (int, error) {
 	if err != nil {
 		return n, fmt.Errorf("serial: read: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -38,6 +39,7 @@ func (s serialStream) Write(p []byte) (int, error) {
 			return total, fmt.Errorf("serial: write: %w", err)
 		}
 	}
+
 	return total, nil
 }
 

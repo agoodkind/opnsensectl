@@ -198,6 +198,7 @@ func applyInsertElements(doc *etree.Document, inserts []ElementInsert) error {
 					"err",
 					err,
 				)
+
 				return fmt.Errorf(
 					"applyInsertElements: parse xml fragment for %q: %w",
 					ins.Name,
